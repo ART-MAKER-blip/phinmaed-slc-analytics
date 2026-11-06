@@ -1,0 +1,61 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+const LINKS = [
+  { href: '/', label: 'Dashboard', icon: 'M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z' },
+  { href: '/imports', label: 'Data imports', icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
+  { href: '/deliberation', label: 'Deliberation', icon: 'M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z' },
+  { href: '/reports', label: 'Reports', icon: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h6' },
+];
+
+export function Sidebar() {
+  const path = usePathname();
+  return (
+    <aside className="flex flex-col gap-7 bg-navy-dark p-4 text-white lg:min-h-screen lg:w-64 lg:flex-none">
+      <div className="flex h-1 overflow-hidden rounded" aria-hidden="true">
+        <span className="flex-1 bg-brand-green" />
+        <span className="flex-1 bg-brand-gold" />
+        <span className="flex-1 bg-white/40" />
+      </div>
+      <div className="flex items-center gap-3 px-2">
+        {/* Replace with the official logo: <Image src="/logo.png" alt="PHINMA Education" width={40} height={40} /> */}
+        <div
+          aria-hidden="true"
+          className="flex h-10 w-10 flex-none items-center justify-center rounded-lg border border-dashed border-white/50 text-[11px] font-semibold text-white/80"
+        >
+          Logo
+        </div>
+        <div className="leading-tight">
+          <div className="text-lg font-bold tracking-tight">PHINMAED</div>
+          <div className="text-xs text-white/70">Learning Analytics</div>
+        </div>
+      </div>
+      <nav aria-label="Main" className="flex flex-row gap-1 overflow-x-auto lg:flex-col">
+        {LINKS.map((l) => {
+          const active = l.href === '/' ? path === '/' : path.startsWith(l.href);
+          return (
+            <Link
+              key={l.href}
+              href={l.href}
+              aria-current={active ? 'page' : undefined}
+              className={`flex min-h-[44px] flex-none items-center gap-3 rounded-lg px-3 font-semibold ${
+                active ? 'bg-white/15 text-white' : 'text-white/80 hover:bg-white/10'
+              }`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={l.icon} />
+              </svg>
+              {l.label}
+            </Link>
+          );
+        })}
+      </nav>
+      <div className="mt-auto hidden rounded-lg bg-white/10 p-3 text-xs text-white/80 lg:block">
+        <div className="font-semibold text-white">Student Learning Coordinator</div>
+        PHINMA COC · Pilot · Sample data
+      </div>
+    </aside>
+  );
+}

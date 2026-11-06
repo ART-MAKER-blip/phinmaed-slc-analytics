@@ -1,0 +1,28 @@
+import type { Metadata } from 'next';
+import './globals.css';
+import { Sidebar } from '@/components/Sidebar';
+
+export const metadata: Metadata = {
+  title: 'PHINMAED Student Learning Analytics and Deliberation System',
+  description: 'UI prototype for the PHINMA Education Student Learning Coordinators (SLC) grade review and deliberation process.',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+        />
+      </head>
+      <body className="font-sans">
+        <div className="flex min-h-screen flex-col lg:flex-row">
+          <Sidebar />
+          <main className="min-w-0 flex-1 p-5 lg:p-8">{children}</main>
+        </div>
+      </body>
+    </html>
+  );
+}
