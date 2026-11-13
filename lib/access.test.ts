@@ -43,6 +43,11 @@ test('routes open only for roles with a matching permission', () => {
   assert.equal(canOpenRoute(user('coo'), '/deliberation'), false);
   assert.equal(canOpenRoute(user('admin'), '/audit'), true);
   assert.equal(canOpenRoute(user('slc'), '/audit'), false);
+  // The most specific route decides.
+  assert.equal(canOpenRoute(as('admin.reference_data'), '/admin'), true);
+  assert.equal(canOpenRoute(as('admin.reference_data'), '/admin/users/5'), false);
+  assert.equal(canOpenRoute(as('admin.users'), '/admin/users/5'), true);
+  assert.equal(canOpenRoute(as('admin.users'), '/admin/reference'), false);
   assert.equal(canOpenRoute(user('faculty'), '/imports'), false);
   assert.equal(canOpenRoute(user('data_manager'), '/imports'), true);
   assert.equal(canOpenRoute(user('data_manager'), '/imports/123'), true);

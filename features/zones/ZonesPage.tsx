@@ -2,12 +2,13 @@ import type { UploadOptions } from '@/features/imports/UploadForm';
 import { formatDateTime } from '@/features/imports/shared';
 import type { RuleSetSummary, RunSummary } from '@/lib/snapshots/server';
 import { ZONES, ZONE_LABEL, type Zone, type ZoneThreshold } from '@/lib/zones';
-import { ApproveButton, CalculateForm, VerifyButton } from './ZoneActions';
+import { ApproveButton, CalculateForm, RuleSetActionButton, RuleSetForm, VerifyButton } from './ZoneActions';
 
 type Props = {
   unavailableReason: string | null;
   canCalculate: boolean;
   canApprove: boolean;
+  canConfigure: boolean;
   options: UploadOptions;
   ruleSets: RuleSetSummary[];
   runs: RunSummary[];
@@ -43,7 +44,8 @@ function ZoneCounts({ counts }: { counts: Record<Zone, number> }) {
   );
 }
 
-export default function ZonesPage({ unavailableReason, canCalculate, canApprove, options, ruleSets, runs }: Props) {
+export default function ZonesPage({ unavailableReason, canCalculate, canApprove, canConfigure, options, ruleSets, runs }: Props) {
+  const termCodes = options.terms.map((t) => t.code);
   return (
     <div className="flex flex-col gap-4">
       <header>
@@ -62,6 +64,7 @@ export default function ZonesPage({ unavailableReason, canCalculate, canApprove,
         <p className="mb-3 mt-0.5 text-xs text-ink-muted">
           A rule set applies from its effective term until a later one is approved. Approved thresholds cannot be changed.
         </p>
+        {canConfigure && !unavailableReason && <div className="mb-3"><RuleSetForm terms={termCodes} /></div>}
         <div className="grid gap-3 lg:grid-cols-2">
           {ruleSets.map((rs) => {
             const t = (level: 'student' | 'subject', zone: Zone) => rs.thresholds.find((x) => x.level === level && x.zone === zone);
@@ -91,8 +94,21 @@ export default function ZonesPage({ unavailableReason, canCalculate, canApprove,
                   <span>
                     {rs.approved_at ? `Approved ${formatDateTime(rs.approved_at)}${rs.approved_by_name ? ` by ${rs.approved_by_name}` : ''}` : 'Not approved yet'}
                   </span>
-                  {rs.status === 'draft' && canApprove && <ApproveButton ruleSetId={rs.rule_set_id} code={rs.code} />}
+                  <div className="flex flex-wrap gap-2">
+                    {rs.status === 'draft' && canApprove && <ApproveButton ruleSetId={rs.rule_set_id} code={rs.code} />}
+                    {rs.status === 'draft' && canConfigure && <RuleSetActionButton ruleSetId={rs.rule_set_id} code={rs.code} action="delete" />}
+                    {rs.status === 'approved' && canApprove && <RuleSetActionButton ruleSetId={rs.rule_set_id} code={rs.code} action="retire" />}
+                  </div>
                 </div>
+                {rs.status === 'draft' && canConfigure && (
+                  <div className="mt-3">
+                    <RuleSetForm terms={termCodes} existing={{
+                      id: rs.rule_set_id, code: rs.code, name: rs.name, effectiveTerm: rs.effective_term,
+                      studentYellowFrom: t('student', 'yellow')?.min ?? 1, studentRedFrom: t('student', 'red')?.min ?? 2,
+                      subjectGreenMax: t('subject', 'green')?.max ?? 10, subjectYellowMax: t('subject', 'yellow')?.max ?? 40,
+                    }} />
+                  </div>
+                )}
               </article>
             );
           })}

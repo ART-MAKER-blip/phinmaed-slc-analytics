@@ -135,3 +135,78 @@ export function VerifyButton({ runId }: { runId: number }) {
     </div>
   );
 }
+
+type Thresholds = { studentYellowFrom: number; studentRedFrom: number; subjectGreenMax: number; subjectYellowMax: number };
+
+/** Create a draft rule set, or edit one (rules.configure). */
+export function RuleSetForm({ terms, existing }: {
+  terms: string[];
+  existing?: { id: number; code: string; name: string; effectiveTerm: string } & Thresholds;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!open) {
+    return <button type="button" className="btn min-h-[36px] text-sm" onClick={() => setOpen(true)}>{existing ? 'Edit draft' : 'New draft rule set'}</button>;
+  }
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = Object.fromEntries(new FormData(event.currentTarget).entries());
+    setBusy(true);
+    setError('');
+    const { ok, data } = existing
+      ? await post(`/api/zones/rule-sets/${existing.id}`, { action: 'update', ...body })
+      : await post('/api/zones/rule-sets', body);
+    setBusy(false);
+    if (!ok) return setError(errorText(data));
+    setOpen(false);
+    router.refresh();
+  }
+  const d = existing ?? { code: '', name: '', effectiveTerm: terms[0] ?? '', studentYellowFrom: 1, studentRedFrom: 2, subjectGreenMax: 10, subjectYellowMax: 40 };
+  return (
+    <form onSubmit={submit} className="grid w-full gap-3 rounded-lg border border-surface-border bg-surface-soft p-3 sm:grid-cols-3">
+      <label className="text-xs font-semibold">Code<input name="code" defaultValue={d.code} disabled={Boolean(existing)} className="field mt-1" required placeholder="rs-2027-1" /></label>
+      <label className="text-xs font-semibold">Name<input name="name" defaultValue={d.name} className="field mt-1" required /></label>
+      <label className="text-xs font-semibold">Effective from term
+        <select name="effectiveTerm" defaultValue={d.effectiveTerm} className="field mt-1">{terms.map((t) => <option key={t}>{t}</option>)}</select>
+      </label>
+      <label className="text-xs font-semibold">Student Yellow from (failed subjects)<input name="studentYellowFrom" type="number" min={1} step={1} defaultValue={d.studentYellowFrom} className="field mt-1" required /></label>
+      <label className="text-xs font-semibold">Student Red from (failed subjects)<input name="studentRedFrom" type="number" min={2} step={1} defaultValue={d.studentRedFrom} className="field mt-1" required /></label>
+      <div className="hidden sm:block" />
+      <label className="text-xs font-semibold">Subject Green up to (% failed)<input name="subjectGreenMax" type="number" min={0} max={99.99} step={0.01} defaultValue={d.subjectGreenMax} className="field mt-1" required /></label>
+      <label className="text-xs font-semibold">Subject Yellow up to (% failed)<input name="subjectYellowMax" type="number" min={0.01} max={99.99} step={0.01} defaultValue={d.subjectYellowMax} className="field mt-1" required /></label>
+      <p className="self-end text-xs text-ink-muted">Red covers the rest, up to 100%. Each range starts right after the one before.</p>
+      <div className="flex flex-wrap items-center gap-2 sm:col-span-3">
+        <button type="submit" disabled={busy} className="btn btn-primary min-h-[38px] text-sm">{busy ? 'Saving…' : existing ? 'Save draft' : 'Create draft'}</button>
+        <button type="button" className="btn min-h-[38px] text-sm" onClick={() => setOpen(false)}>Cancel</button>
+        {error && <p role="alert" className="w-full text-sm font-semibold text-red-700">{error}</p>}
+      </div>
+    </form>
+  );
+}
+
+/** Delete a draft (rules.configure) or retire an approved rule set (rules.approve). */
+export function RuleSetActionButton({ ruleSetId, code, action }: { ruleSetId: number; code: string; action: 'delete' | 'retire' }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function run() {
+    const question = action === 'delete'
+      ? `Delete draft ${code}? This cannot be undone.`
+      : `Retire ${code}? Past calculations keep it; new calculations will use the latest other approved rule set.`;
+    if (!window.confirm(question)) return;
+    setBusy(true);
+    setError('');
+    const { ok, data } = await post(`/api/zones/rule-sets/${ruleSetId}`, { action });
+    setBusy(false);
+    if (!ok) return setError(errorText(data));
+    router.refresh();
+  }
+  return (
+    <div>
+      <button type="button" className="btn min-h-[36px] text-sm" disabled={busy} onClick={run}>{action === 'delete' ? 'Delete draft' : 'Retire'}</button>
+      {error && <p role="alert" className="mt-1 text-xs font-semibold text-red-700">{error}</p>}
+    </div>
+  );
+}
