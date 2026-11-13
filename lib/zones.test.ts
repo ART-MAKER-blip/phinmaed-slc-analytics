@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_RULES, failureRate, studentZone, subjectZone, summarize, type RuleSet } from './zones';
+import {
+  classify, DEFAULT_RULES, failureRate, studentZone, subjectZone, summarize, validateThresholds,
+  type RuleSet, type Zone, type ZoneLevel, type ZoneThreshold,
+} from './zones';
 
 // Test case 7 in the proposal: students with 0, 1 and 2 or more failed subjects.
 test('student zones follow 0 / 1 / 2+ failed subjects', () => {
@@ -37,4 +40,41 @@ test('summarize returns counts and rates together', () => {
   assert.deepEqual(s.counts, { green: 2, yellow: 1, red: 1 });
   assert.equal(s.total, 4);
   assert.equal(s.rates.green, 50);
+});
+
+const STORED: ZoneThreshold[] = [
+  { level: 'student', zone: 'green', min: 0, max: 0 },
+  { level: 'student', zone: 'yellow', min: 1, max: 1 },
+  { level: 'student', zone: 'red', min: 2, max: null },
+  { level: 'subject', zone: 'green', min: 0, max: 10 },
+  { level: 'subject', zone: 'yellow', min: 10.01, max: 40 },
+  { level: 'subject', zone: 'red', min: 40.01, max: 100 },
+];
+
+test('stored rule sets classify students by failed subjects (test case 7)', () => {
+  assert.deepEqual([0, 1, 2, 5].map((n) => classify(STORED, 'student', n)), ['green', 'yellow', 'red', 'red']);
+});
+
+test('stored rule sets classify subjects at the documented boundaries (test case 8)', () => {
+  assert.deepEqual(
+    [0, 10, 10.01, 40, 40.01, 100].map((r) => classify(STORED, 'subject', r)),
+    ['green', 'green', 'yellow', 'yellow', 'red', 'red'],
+  );
+  // 10.004% rounds to 10.00 (green); 10.005% rounds to 10.01 (yellow).
+  assert.equal(classify(STORED, 'subject', 10.004), 'green');
+  assert.equal(classify(STORED, 'subject', 10.005), 'yellow');
+  assert.throws(() => classify(STORED, 'subject', 120), /No subject zone/);
+});
+
+test('the seeded thresholds are a valid rule set', () => {
+  assert.deepEqual(validateThresholds(STORED), []);
+});
+
+test('incomplete or gapped rule sets are rejected', () => {
+  const without = (level: ZoneLevel, zone: Zone) => STORED.filter((t) => !(t.level === level && t.zone === zone));
+  assert.match(validateThresholds(without('subject', 'yellow')).join(), /subject level needs/);
+  const gap = STORED.map((t) => (t.level === 'subject' && t.zone === 'yellow' ? { ...t, min: 11 } : t));
+  assert.match(validateThresholds(gap).join(), /must start right after green/);
+  const fractional = STORED.map((t) => (t.level === 'student' && t.zone === 'yellow' ? { ...t, min: 1, max: 1.5 } : t));
+  assert.ok(validateThresholds(fractional).length > 0);
 });

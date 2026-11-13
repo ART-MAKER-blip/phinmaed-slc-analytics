@@ -49,11 +49,14 @@ The app's sample dashboard data is still placeholder data in the code, not saved
 | Route | Screen |
 |---|---|
 | `/login` | Email/password sign-in; credentials are checked against PostgreSQL |
-| `/` | Dashboard selected from the signed-in user's administrator-assigned role |
+| `/` | Dashboard for the signed-in role: zone overview from the latest snapshot (SLC, Dean, COO, Dean of Deans, Team Learning), or live Data Manager, Administrator and Faculty dashboards |
 | `/imports` | Grades upload, import history (from PostgreSQL) |
 | `/imports/[batchId]` | Validation report, file preview, accept or reject, original file and error list downloads |
-| `/deliberation` | Concern, evidence, agreed action, owner, due date, and referral with a restricted note |
-| `/reports` | Periodic and semester report with program breakdown |
+| `/deliberation` | Concerns from flagged results, filtered by status and access |
+| `/deliberation/[concernId]` | Deliberations, interventions with follow-ups, referrals with restricted notes, close/reopen |
+| `/audit` | Audit log review (administrator) |
+| `/zones` | Rule sets (approve), zone calculation runs, and verification |
+| `/reports` | Periodic and semester reports by program, outcome review, campus comparison, CSV export |
 
 - `lib/zones.ts` is the rule engine. Thresholds sit in a `RuleSet` that carries an effective term, so a later term can change them without changing earlier results.
 - `lib/data.ts` holds placeholder data. Replace it with PostgreSQL queries based on the ERD in Appendix C.
@@ -70,6 +73,36 @@ The app's sample dashboard data is still placeholder data in the code, not saved
 
 Working assumptions to confirm with PHINMA: the SIS column layout (`lib/imports/grades.ts`), the grade scale (grades are stored as text and not range-checked), and how INC, dropped and withdrawn results count (`result_status` in `db/migrations/003_coc_reference_data.sql`). Excel files must be saved as CSV UTF-8 first; attendance and permit files are not connected yet.
 
+## Zone calculation
+
+1. A rule set starts as a draft. A user with `rules.approve` (COO, Dean of Deans) approves it on `/zones`; the database then locks its thresholds. A rule set applies from its effective term until a later one is approved.
+2. A user with `zones.calculate` (Data Manager, Administrator) picks campus, term and period and runs the calculation. It uses each student's latest attempt per offering:
+   - **Student zone:** number of failed subjects (`result_status.counts_as_failed`).
+   - **Subject zone:** per offering (course section), failed ÷ graded, rounded to 2 decimals. Statuses with `counts_in_denominator = false` (dropped, withdrawn, no grade) are left out of the rate.
+   - **Teacher results:** counts per teaching assignment only, with no zone, rank or rating.
+3. Each run is saved with its rule set and the exact time it read the grades. Grade writes are blocked for that moment, and saved results cannot be edited.
+4. **Verify** recalculates a run from the grades in force at that time (replaced grades are kept in `grade_record_history`) and its rule set, then compares every row (functional test case 20).
+
+## Dashboards and reports
+
+- Pages are rendered on the server from the latest snapshot run for the selected campus, term and period (URL parameters `campus`, `term`, `period`). The browser receives only what the role may see.
+- Figures are limited to the user's campus/program scope: students by their program, subject sections by the programs their course belongs to, and teacher indicators by those sections. Sections appear only with the matching permission (`results.student`, `results.subject`, `results.teacher`, `results.compare_campus`).
+- Reports show counts with rates per program, Red subject sections, and an outcome review: how students who were Yellow or Red in the previous period of the term moved. A semester report uses the latest period calculated in the term.
+- **Export CSV** (`report.generate`) loads the data again with the user's scope, records a `report_run` with its filters, and writes an audit entry. Requests for a program outside the user's scope are refused.
+- Faculty accounts see their own classes once `app_users.teacher_id` links them to a teacher record (there is no screen for this yet).
+- Demo accounts see the sample data from `lib/data.ts`.
+
+## Deliberation, interventions and referrals
+
+- A user with `concern.manage` (SLC, Dean, ALC) opens a concern about a student or subject section flagged in the latest zone results, within their scope.
+- On the concern: record deliberations (meeting date, decision, participants, evidence; the latest zone run is attached as evidence automatically), add interventions with an owner and due date, log follow-ups that can change an intervention's status, refer to ALC, SSP or KSH, and close or reopen the concern. A closed concern accepts no changes until reopened.
+- Access per concern (`lib/concerns/rules.ts`):
+  - **Full** – coordinators within campus/program scope see everything except restricted notes they lack permission for.
+  - **Team** – SSP, KSH and ALC staff see concerns referred to their team: the concern and their own team's referrals only, not deliberations or other teams' referrals. They can update their referral's status and add notes.
+  - **Owner** – a person assigned an intervention sees the concern and their own interventions, and can log follow-ups on them.
+- Restricted notes live in `referral_note` and are returned only to roles with `referral_note.view`, and for team staff only on their own team's referrals. Note text is never written to the audit log.
+- Every change is re-authorized on the server and audited. Records are not deleted; changes are status updates, and the audit log keeps who changed what from and to.
+
 ## Current limitations
 
-Authentication, role and scope checks, audit logging and grade imports are connected to PostgreSQL. Dashboard metrics, deliberation, period cycle and report pages still show sample data from `lib/data.ts`, and zone snapshots are not yet computed from imported grades.
+The period cycle page still shows sample data. There are no screens yet for creating draft rule sets, managing users and scopes, or linking accounts to teachers. Excel files must be saved as CSV before import.

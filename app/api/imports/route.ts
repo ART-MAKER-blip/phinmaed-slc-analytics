@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { handleImportRequest } from '@/lib/imports/api';
+import { handleApi } from '@/lib/api';
 import { createGradeBatch, ImportError, MAX_FILE_BYTES } from '@/lib/imports/server';
 
 export async function POST(request: Request) {
-  return handleImportRequest('import.upload', async (user) => {
+  return handleApi('import.upload', async (user) => {
     const length = Number(request.headers.get('content-length') ?? 0);
     if (length > MAX_FILE_BYTES + 64 * 1024) throw new ImportError('The file is larger than 10 MB.', 413);
 

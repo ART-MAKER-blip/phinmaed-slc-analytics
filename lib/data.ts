@@ -3,7 +3,9 @@
  * Replace these lists with queries to PostgreSQL once the schema in the proposal's
  * ERD (Appendix C) is implemented.
  */
-import { failureRate, studentZone, subjectZone, type Zone } from './zones';
+import type { ZoneOverview } from '@/lib/results/types';
+import type { Permission } from './permissions';
+import { DEFAULT_RULES, failureRate, studentZone, subjectZone, type Zone, type ZoneThreshold } from './zones';
 
 export type ConcernType = 'Academic' | 'Non-academic';
 
@@ -64,9 +66,51 @@ export const teacherIndicators = [...SUBJECTS]
   .sort((a, b) => a.teacher.localeCompare(b.teacher))
   .map((s) => ({ teacher: s.teacher, classes: 1, enrolled: s.enrolled, failed: s.failed, rate: failureRate(s.failed, s.enrolled) }));
 
-/* ---- Deliberation ---- */
-export const REFERRAL_TEAMS = [
-  'Active Learning Coordinator (ALC)',
-  'Student Success Program (SSP) adviser',
-  'Kasama Support Hub (KSH)',
-] as const;
+/* ---- Sample zone overview (demo accounts and no-database mode) ---- */
+
+export function sampleOverview(permissions: readonly Permission[]): ZoneOverview {
+  const thresholds: ZoneThreshold[] = [
+    { level: 'student', zone: 'green', min: 0, max: DEFAULT_RULES.student.yellowMin - 1 },
+    { level: 'student', zone: 'yellow', min: DEFAULT_RULES.student.yellowMin, max: DEFAULT_RULES.student.redMin - 1 },
+    { level: 'student', zone: 'red', min: DEFAULT_RULES.student.redMin, max: null },
+    { level: 'subject', zone: 'green', min: 0, max: DEFAULT_RULES.subject.greenMax },
+    { level: 'subject', zone: 'yellow', min: DEFAULT_RULES.subject.greenMax + 0.01, max: DEFAULT_RULES.subject.yellowMax },
+    { level: 'subject', zone: 'red', min: DEFAULT_RULES.subject.yellowMax + 0.01, max: 100 },
+  ];
+  const count = <T,>(items: T[], zone: (item: T) => Zone) => {
+    const counts = { green: 0, yellow: 0, red: 0 };
+    for (const item of items) counts[zone(item)] += 1;
+    return counts;
+  };
+  const overview: ZoneOverview = {
+    source: 'sample',
+    run: { runId: 0, campus: 'COC', campusName: 'PHINMA Cagayan de Oro College', term: '2026-1', period: 'P1', ruleSet: DEFAULT_RULES.id, calculatedAt: new Date(0).toISOString() },
+    programs: 'all',
+    thresholds,
+  };
+  if (permissions.includes('results.student')) {
+    overview.students = {
+      counts: count(STUDENTS, (s) => studentZone(s.failedSubjects)),
+      total: STUDENTS.length,
+      atRisk: FLAGGED_STUDENTS.slice(0, 10).map((s) => ({
+        id: s.id, name: s.id, program: s.program, yearLevel: s.yearLevel, failed: s.failedSubjects, zone: studentZone(s.failedSubjects),
+      })),
+      atRiskTotal: FLAGGED_STUDENTS.length,
+    };
+  }
+  if (permissions.includes('results.subject')) {
+    const rows = [...subjectRows].sort((a, b) => b.rate - a.rate).slice(0, 10);
+    overview.subjects = {
+      counts: count(subjectRows, (s) => s.zone),
+      total: subjectRows.length,
+      rows: rows.map((s) => ({
+        key: s.code, code: s.code, section: 'A', title: s.code, failed: s.failed, graded: s.enrolled, rate: s.rate, zone: s.zone,
+        teachers: permissions.includes('results.teacher')
+          ? [{ name: s.teacher, failed: s.failed, students: s.enrolled, rate: s.rate }]
+          : undefined,
+      })),
+    };
+  }
+  if (permissions.includes('results.teacher')) overview.teachers = { total: teacherIndicators.length };
+  return overview;
+}

@@ -12,6 +12,8 @@ const LINKS = [
   { href: '/imports', label: 'Import reports', icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
   { href: '/deliberation', label: 'Deliberation', icon: 'M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z' },
   { href: '/period-cycle', label: 'Period cycle', icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2z' },
+  { href: '/zones', label: 'Zones', icon: 'M12 3a9 9 0 1 0 9 9M12 3v9h9M12 3a9 9 0 0 1 9 9' },
+  { href: '/audit', label: 'Audit log', icon: 'M9 5h10M9 12h10M9 19h10M4 5h.01M4 12h.01M4 19h.01' },
   { href: '/reports', label: 'Reports', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
 ];
 

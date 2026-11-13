@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { canOpenRoute, inScope, scopeCondition } from './access';
+import { canOpenRoute, inScope, programsAtCampus, scopeCondition } from './access';
 import { PERMISSIONS, ROLE_PERMISSIONS, type Permission } from './permissions';
 import { ROLES } from './roles';
 
@@ -37,12 +37,20 @@ const as = (...permissions: Permission[]) => ({ permissions });
 test('routes open only for roles with a matching permission', () => {
   const user = (role: keyof typeof ROLE_PERMISSIONS) => as(...ROLE_PERMISSIONS[role]);
   assert.equal(canOpenRoute(user('slc'), '/deliberation'), true);
-  assert.equal(canOpenRoute(user('ksh'), '/deliberation'), false);
+  // Support teams and intervention owners open Deliberation to see what was referred or assigned to them.
+  assert.equal(canOpenRoute(user('ksh'), '/deliberation'), true);
+  assert.equal(canOpenRoute(user('faculty'), '/deliberation'), true);
+  assert.equal(canOpenRoute(user('coo'), '/deliberation'), false);
+  assert.equal(canOpenRoute(user('admin'), '/audit'), true);
+  assert.equal(canOpenRoute(user('slc'), '/audit'), false);
   assert.equal(canOpenRoute(user('faculty'), '/imports'), false);
   assert.equal(canOpenRoute(user('data_manager'), '/imports'), true);
   assert.equal(canOpenRoute(user('data_manager'), '/imports/123'), true);
   assert.equal(canOpenRoute(user('coo'), '/reports'), true);
   assert.equal(canOpenRoute(user('admin'), '/reports'), false);
+  assert.equal(canOpenRoute(user('data_manager'), '/zones'), true);
+  assert.equal(canOpenRoute(user('coo'), '/zones'), true);
+  assert.equal(canOpenRoute(user('slc'), '/zones'), false);
   // The dashboard needs only a sign-in, and a similar prefix is not a match.
   assert.equal(canOpenRoute(as(), '/'), true);
   assert.equal(canOpenRoute(as(), '/reportsx'), true);
@@ -66,4 +74,14 @@ test('scope conditions become parameterized SQL', () => {
     scopeCondition({ scopes: [{ campus: 'COC', program: 'BSIT' }, { campus: 'COC', program: null }] }, cols, 3),
     { sql: '((c.code = $3 AND p.code = $4) OR (c.code = $5))', params: ['COC', 'BSIT', 'COC'] },
   );
+});
+
+test('programs visible at a campus follow the scopes of the user', () => {
+  assert.equal(programsAtCampus({ scopes: [{ campus: 'COC', program: null }] }, 'COC'), 'all');
+  assert.equal(programsAtCampus({ scopes: [{ campus: null, program: null }] }, 'OTHER'), 'all');
+  assert.deepEqual(
+    programsAtCampus({ scopes: [{ campus: 'COC', program: 'BSIT' }, { campus: 'COC', program: 'BSBA' }, { campus: 'X', program: 'BSEd' }] }, 'COC'),
+    ['BSBA', 'BSIT'],
+  );
+  assert.deepEqual(programsAtCampus({ scopes: [{ campus: 'X', program: null }] }, 'COC'), []);
 });

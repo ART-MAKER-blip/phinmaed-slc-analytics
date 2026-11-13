@@ -1,4 +1,5 @@
 import 'server-only';
+import { ApiError } from '@/lib/api';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { getPool } from '@/lib/db';
@@ -10,11 +11,7 @@ import { collectIdentifiers, validateGradeFile, type GradeLookups, type GradeRow
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-export class ImportError extends Error {
-  constructor(message: string, public status = 400) {
-    super(message);
-  }
-}
+export class ImportError extends ApiError {}
 
 type BatchContext = { campusId: number; campusCode: string; termId: number; termCode: string; academicYearId: number; periodId: number; periodCode: string };
 
@@ -297,11 +294,12 @@ async function writeGradeRows(client: PoolClient, ctx: BatchContext, batchId: nu
     [assignments.map((r) => r.courseCode), assignments.map((r) => r.section), assignments.map((r) => r.teacherId), ctx.termId, ctx.campusId],
   );
 
-  // A later file for the same period replaces a grade (late grade changes); the earlier
-  // value stays in the earlier batch's preserved original file.
+  // A later file for the same period replaces a grade (late grade changes); a trigger keeps
+  // the earlier value in grade_record_history. updated_at uses clock_timestamp(), the time
+  // of the write, so zone snapshots can tell exactly which grades they included.
   const result = await client.query(
-    `INSERT INTO grade_record (student_id, offering_id, grading_period_id, attempt_no, grade_value, result_status_id, batch_id)
-     SELECT s.student_id, o.offering_id, $7, u.attempt, u.grade, rs.result_status_id, $8
+    `INSERT INTO grade_record (student_id, offering_id, grading_period_id, attempt_no, grade_value, result_status_id, batch_id, updated_at)
+     SELECT s.student_id, o.offering_id, $7, u.attempt, u.grade, rs.result_status_id, $8, clock_timestamp()
        FROM unnest($1::text[], $2::text[], $3::text[], $4::smallint[], $5::text[], $6::text[])
             AS u(sis_id, course, section, attempt, grade, status)
        JOIN student s ON s.sis_id = u.sis_id
@@ -312,7 +310,7 @@ async function writeGradeRows(client: PoolClient, ctx: BatchContext, batchId: nu
        SET grade_value = EXCLUDED.grade_value,
            result_status_id = EXCLUDED.result_status_id,
            batch_id = EXCLUDED.batch_id,
-           updated_at = NOW()`,
+           updated_at = clock_timestamp()`,
     [rows.map((r) => r.studentId), rows.map((r) => r.courseCode), rows.map((r) => r.section), rows.map((r) => r.attempt),
       rows.map((r) => r.grade), rows.map((r) => r.resultStatus), ctx.periodId, batchId, ctx.termId, ctx.campusId],
   );

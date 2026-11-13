@@ -22,9 +22,11 @@ export function hasPermission(user: Pick<AccessUser, 'permissions'>, permission:
 /** Pages and the permissions that open them (any one is enough). Unlisted pages need only a sign-in. */
 export const ROUTE_PERMISSIONS: Record<string, readonly Permission[]> = {
   '/imports': ['import.view'],
-  '/deliberation': ['deliberation.record', 'concern.manage'],
+  '/deliberation': ['deliberation.record', 'concern.manage', 'referral.view', 'intervention.own'],
   '/period-cycle': ['concern.manage'],
   '/reports': ['report.view'],
+  '/zones': ['zones.calculate', 'rules.approve', 'rules.configure'],
+  '/audit': ['audit.view'],
 };
 
 export function canOpenRoute(user: Pick<AccessUser, 'permissions'>, path: string) {
@@ -40,6 +42,16 @@ export function inScope(user: Pick<AccessUser, 'scopes'>, campus: string, progra
       (scope.campus === null || scope.campus === campus) &&
       (scope.program === null || scope.program === program),
   );
+}
+
+/**
+ * Programs whose results the user may see at a campus: 'all', a list, or an empty list
+ * (no access to that campus).
+ */
+export function programsAtCampus(user: Pick<AccessUser, 'scopes'>, campus: string): 'all' | string[] {
+  const scopes = user.scopes.filter((s) => s.campus === null || s.campus === campus);
+  if (scopes.some((s) => s.program === null)) return 'all';
+  return [...new Set(scopes.map((s) => s.program as string))].sort();
 }
 
 /**

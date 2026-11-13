@@ -1,11 +1,11 @@
-import { handleImportRequest, parseBatchId } from '@/lib/imports/api';
+import { handleApi, parseId } from '@/lib/api';
 import { getBatchForUser, getBatchIssues, ImportError } from '@/lib/imports/server';
 import { toCsv } from '@/lib/imports/csv';
 
 /** The batch's error report as CSV. */
 export async function GET(_request: Request, { params }: { params: { batchId: string } }) {
-  return handleImportRequest('import.view', async (user) => {
-    const batch = await getBatchForUser(user, parseBatchId(params.batchId));
+  return handleApi('import.view', async (user) => {
+    const batch = await getBatchForUser(user, parseId(params.batchId, 'Import batch not found.'));
     if (!batch) throw new ImportError('Import batch not found.', 404);
     const issues = await getBatchIssues(batch.batch_id);
     const csv = toCsv([
