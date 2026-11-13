@@ -80,6 +80,21 @@ const ROLE_DASHBOARDS: Record<Exclude<RoleId, 'slc'>, RoleDashboardContent> = {
       { title: 'Case KSH-012', detail: 'Support coordination · Review follow-up', status: 'Scheduled' },
     ],
   },
+  faculty: {
+    eyebrow: 'My classes', title: 'Class results and follow-up',
+    description: 'Results for the classes you teach, shown as indicators for review, with the support actions assigned to you.',
+    metrics: [
+      { label: 'Classes this term', value: '4', detail: 'Term 2026-1' },
+      { label: 'Students enrolled', value: '163', detail: 'Across your classes' },
+      { label: 'Failed in Period 1', value: '21', detail: 'Indicator for review only' },
+      { label: 'Actions assigned to you', value: '3', detail: '1 due this week', tone: 'metric-gold' },
+    ],
+    queueTitle: 'Your assigned actions', queue: [
+      { title: 'Make-up activity · Subject A, section 2', detail: 'Agreed in deliberation on Oct 29', status: 'Due this week' },
+      { title: 'Consultation hours · Subject C', detail: 'Share schedule with flagged students', status: 'In progress' },
+      { title: 'Progress check · Subject A, section 2', detail: 'Report back before Period 2 review', status: 'Scheduled' },
+    ],
+  },
   coo: {
     eyebrow: 'Executive overview', title: 'Student success across campuses',
     description: 'A high-level view of term progress and support activity across PHINMA Education.',
@@ -96,11 +111,56 @@ const ROLE_DASHBOARDS: Record<Exclude<RoleId, 'slc'>, RoleDashboardContent> = {
       { title: 'University of Pangasinan', detail: '1,670 students · Report finalized', status: 'Submitted' },
     ],
   },
+  dod: {
+    eyebrow: 'Semester review', title: 'Programs across the network',
+    description: 'A semester-level summary across programs and campuses, using the same zone definitions and denominators.',
+    metrics: [
+      { label: 'Programs reporting', value: '38', detail: 'Across 5 campuses' },
+      { label: 'Students reviewed', value: '4,820', detail: 'Semester 2026-1' },
+      { label: 'Red zone', value: '309 (6.4%)', detail: 'Count and rate', tone: 'metric-red' },
+      { label: 'Moved out of red', value: '41%', detail: 'Since Period 1', tone: 'metric-green' },
+    ],
+    queueTitle: 'Semester report items', queue: [
+      { title: 'Programs with rising red share', detail: '4 programs above last semester', status: 'Review' },
+      { title: 'Rule set RS-2026-01 approval', detail: 'Thresholds awaiting confirmation', status: 'Pending' },
+      { title: 'Semester report draft', detail: 'Generated from Period 3 snapshots', status: 'Scheduled' },
+    ],
+  },
+  tl: {
+    eyebrow: 'PEN-wide leadership', title: 'Team Learning overview',
+    description: 'Compare campuses and track whether agreed actions are followed by better results.',
+    metrics: [
+      { label: 'Campuses reporting', value: '5 / 5', detail: 'Term 2026-1' },
+      { label: 'Subjects in red', value: '27', detail: 'Across all campuses', tone: 'metric-red' },
+      { label: 'Interventions completed', value: '78%', detail: 'Of those due to date', tone: 'metric-green' },
+      { label: 'Subjects improved', value: '12', detail: 'After an intervention' },
+    ],
+    queueTitle: 'Cross-campus watch list', queue: [
+      { title: 'General education mathematics', detail: 'Red at 3 campuses · Period 1', status: 'Review' },
+      { title: 'Accounting fundamentals', detail: 'Yellow at 4 campuses · improving', status: 'Monitoring' },
+      { title: 'Campus comparison report', detail: 'Period 1, all programs', status: 'Ready' },
+    ],
+  },
+  data_manager: {
+    eyebrow: 'Data operations', title: 'Imports and zone calculation',
+    description: 'Upload SIS and Team Data files, resolve validation issues, and run zone calculation for each period.',
+    metrics: [
+      { label: 'Imports this term', value: '3', detail: 'Period 1' },
+      { label: 'Needs review', value: '1', detail: '6 row issues open', tone: 'metric-gold' },
+      { label: 'Rejected', value: '1', detail: 'Missing required columns', tone: 'metric-red' },
+      { label: 'Last zone calculation', value: 'Oct 27', detail: 'Period 1 · RS-2026-01' },
+    ],
+    queueTitle: 'Import queue', queue: [
+      { title: 'P1_grades_2026-1.csv', detail: '2 duplicates · 3 unmatched IDs · 1 program mapping', status: 'Needs review' },
+      { title: 'teamdata_2026-1.xlsx', detail: 'Rejected · re-upload with required columns', status: 'Action needed' },
+      { title: 'Run Period 1 zone calculation', detail: 'After the grades import is accepted', status: 'Waiting' },
+    ],
+  },
   admin: {
     eyebrow: 'System operations', title: 'Administration',
     description: 'Manage workspace access, role assignments, and effective academic rule sets.',
     metrics: [
-      { label: 'Active accounts', value: '84', detail: 'Across 7 role groups' },
+      { label: 'Active accounts', value: '84', detail: 'Across 11 role groups' },
       { label: 'Access requests', value: '3', detail: 'Awaiting review', tone: 'metric-gold' },
       { label: 'Active rule set', value: 'RS-2026-01', detail: 'Effective Term 2026-1' },
       { label: 'Recent access events', value: '128', detail: 'Recorded this week' },

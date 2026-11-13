@@ -5,7 +5,8 @@ import { ZoneChip } from '@/components/ZoneChip';
 import { FLAGGED_STUDENTS, REFERRAL_TEAMS, subjectRows } from '@/lib/data';
 import { studentZone } from '@/lib/zones';
 import { useRole } from '@/components/RoleProvider';
-import { ROLES } from '@/lib/roles';
+import { getRoleLabel } from '@/lib/roles';
+import { hasPermission } from '@/lib/access';
 
 type Filter = 'All' | 'Academic' | 'Non-academic';
 
@@ -17,7 +18,7 @@ const STARTING_INTERVENTIONS = [
 ];
 
 export default function DeliberationPage() {
-  const { role: roleId } = useRole();
+  const { user, role: roleId } = useRole();
   const [filter, setFilter] = useState<Filter>('All');
   const [selectedId, setSelectedId] = useState(FLAGGED_STUDENTS[0].id);
   const [referralTo, setReferralTo] = useState<string>(REFERRAL_TEAMS[1]);
@@ -29,7 +30,7 @@ export default function DeliberationPage() {
   const students = [0, 1, 4, 14, 15, 16].map((index) => FLAGGED_STUDENTS[index]);
   const list = useMemo(() => students.filter((student) => filter === 'All' || student.concern === filter), [filter]);
   const student = students.find((item) => item.id === selectedId) ?? list[0] ?? students[0];
-  const role = ROLES.find((item) => item.id === roleId) ?? ROLES[0];
+  const role = { label: getRoleLabel(roleId), canSeeRestricted: hasPermission(user, 'referral_note.view') };
   const concernCounts = {
     All: students.length,
     Academic: students.filter((item) => item.concern === 'Academic').length,

@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ROLES } from '@/lib/roles';
 
-const DEMO_ROLES = ['slc', 'dean', 'alc', 'ssp', 'ksh', 'coo', 'admin'] as const;
+const DEMO_ROLES = ROLES.map((role) => role.id);
 
 export default function LoginForm({ showDemoAccounts }: { showDemoAccounts: boolean }) {
   const router = useRouter();

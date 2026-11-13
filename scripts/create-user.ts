@@ -4,6 +4,7 @@ import { loadEnvConfig } from '@next/env';
 import { getPool } from '@/lib/database';
 import { hashPassword } from '@/lib/password';
 import { isRoleId, ROLES } from '@/lib/roles';
+import { assignRoleAtCampus } from './user-roles';
 
 function prompt(label: string) {
   const readline = createInterface({ input: stdin, output: stdout });
@@ -62,11 +63,22 @@ async function main() {
     if (password.length < 12 || password.length > 1024) throw new Error('Password must be 12 to 1024 characters.');
 
     const passwordHash = await hashPassword(password);
-    await pool.query(
-      'INSERT INTO app_users (email, name, password_hash, role) VALUES ($1, $2, $3, $4)',
-      [email, name, passwordHash, role],
-    );
-    console.log(`Created ${email} with the ${role} role.`);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const user = await client.query<{ id: string }>(
+        'INSERT INTO app_users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id',
+        [email, name, passwordHash],
+      );
+      await assignRoleAtCampus(client, user.rows[0].id, role, 'COC');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    console.log(`Created ${email} with the ${role} role at COC.`);
   } finally {
     await pool.end();
   }

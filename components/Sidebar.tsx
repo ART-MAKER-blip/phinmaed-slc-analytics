@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { getRoleLabel } from '@/lib/roles';
+import { canOpenRoute } from '@/lib/access';
 import { useRole } from '@/components/RoleProvider';
 
 const LINKS = [
@@ -11,6 +12,7 @@ const LINKS = [
   { href: '/imports', label: 'Import reports', icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
   { href: '/deliberation', label: 'Deliberation', icon: 'M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z' },
   { href: '/period-cycle', label: 'Period cycle', icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2z' },
+  { href: '/reports', label: 'Reports', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
 ];
 
 export function Sidebar() {
@@ -52,7 +54,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav aria-label="Main" className="flex flex-row gap-1 overflow-x-auto lg:flex-col">
-        {LINKS.map((l) => {
+        {LINKS.filter((l) => canOpenRoute(user, l.href)).map((l) => {
           const active = l.href === '/' ? path === '/' : path.startsWith(l.href);
           return (
             <Link

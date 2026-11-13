@@ -64,38 +64,6 @@ export const teacherIndicators = [...SUBJECTS]
   .sort((a, b) => a.teacher.localeCompare(b.teacher))
   .map((s) => ({ teacher: s.teacher, classes: 1, enrolled: s.enrolled, failed: s.failed, rate: failureRate(s.failed, s.enrolled) }));
 
-/* ---- Imports ---- */
-export interface ImportBatch {
-  id: string;
-  file: string;
-  source: 'SIS' | 'Team Data';
-  uploadedBy: string;
-  uploadedAt: string;
-  rows: number;
-  status: 'Accepted' | 'Needs review' | 'Rejected';
-}
-
-export const IMPORT_HISTORY: ImportBatch[] = [
-  { id: 'IB-0003', file: 'P1_grades_2026-1.csv', source: 'SIS', uploadedBy: 'Data manager 1', uploadedAt: '2026-10-27 09:12', rows: 1036, status: 'Needs review' },
-  { id: 'IB-0002', file: 'P1_attendance_2026-1.csv', source: 'SIS', uploadedBy: 'Data manager 1', uploadedAt: '2026-10-27 09:05', rows: 1036, status: 'Accepted' },
-  { id: 'IB-0001', file: 'teamdata_2026-1.xlsx', source: 'Team Data', uploadedBy: 'Data manager 2', uploadedAt: '2026-10-26 15:40', rows: 148, status: 'Rejected' },
-];
-
-export const IMPORT_ISSUES = [
-  { kind: 'Missing column', count: 0, detail: 'All required columns are present: student_id, course_code, term, program, grade, result_status.' },
-  { kind: 'Duplicate records', count: 2, detail: 'Rows 214 and 507 repeat the same student and course in the same term.' },
-  { kind: 'Unmatched identifiers', count: 3, detail: 'Three student IDs are not in the enrollment list for the selected term.' },
-  { kind: 'Term or program mapping', count: 1, detail: 'Row 88 uses program code BSIT-X, which is not mapped to a program.' },
-];
-
-export const IMPORT_PREVIEW = [
-  { row: 1, student: 'Student 014', course: 'Subject A', term: '2026-1', grade: '68', result: 'Failed', ok: true },
-  { row: 2, student: 'Student 014', course: 'Subject B', term: '2026-1', grade: '74', result: 'Passed', ok: true },
-  { row: 88, student: 'Student 072', course: 'Subject A', term: '2026-1', grade: '71', result: 'Passed', ok: false },
-  { row: 214, student: 'Student 101', course: 'Subject C', term: '2026-1', grade: '70', result: 'Passed', ok: false },
-  { row: 215, student: 'Student 033', course: 'Subject D', term: '2026-1', grade: '75', result: 'Passed', ok: true },
-];
-
 /* ---- Deliberation ---- */
 export const REFERRAL_TEAMS = [
   'Active Learning Coordinator (ALC)',
