@@ -7,10 +7,136 @@ body {
 }
 
 @layer components {
-  .card { @apply rounded-2xl border border-surface-border bg-white p-5; }
+  .card { @apply rounded-lg border border-surface-border bg-white p-5; }
   .btn { @apply inline-flex min-h-[44px] items-center justify-center rounded-xl border border-[#C9CFDB] bg-white px-4 font-semibold text-ink transition hover:bg-surface-soft; }
   .btn-primary { @apply border-navy bg-navy text-white hover:bg-navy-dark; }
   .th { @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted; }
   .td { @apply px-3 py-3 align-middle; }
   .field { @apply min-h-[44px] w-full rounded-xl border border-[#C9CFDB] bg-white px-3 text-ink; }
+
+  .login-page { @apply relative flex min-h-screen items-center overflow-hidden bg-[#F0F3EF] px-5 py-10 text-ink; }
+  .login-band { @apply absolute inset-x-0 top-0 flex h-2; }
+  .login-band span { @apply flex-1; }
+  .login-band span:nth-child(1) { @apply bg-[#1F7A3D]; }
+  .login-band span:nth-child(2) { @apply bg-[#F2B800]; }
+  .login-band span:nth-child(3) { @apply bg-navy; }
+  .login-layout { @apply relative mx-auto grid w-full max-w-5xl items-center gap-12 lg:grid-cols-[1fr_420px] lg:gap-24; }
+  .login-intro { @apply py-6; }
+  .login-brand-mark { @apply mb-12 flex h-12 w-12 items-center justify-center rounded-lg bg-navy text-xl font-bold text-white; }
+  .eyebrow { @apply text-xs font-bold uppercase tracking-[0.12em] text-[#48745A]; }
+  .login-intro h1 { @apply mt-4 text-4xl font-bold leading-[1.08] tracking-tight text-navy md:text-5xl; }
+  .login-intro-copy { @apply mt-5 max-w-md text-base leading-7 text-ink-muted; }
+  .login-term { @apply mt-12 flex flex-wrap items-center gap-2 text-sm font-medium text-ink-soft; }
+  .status-dot { @apply h-2 w-2 rounded-full bg-[#1F7A3D]; }
+  .login-panel { @apply rounded-lg border border-[#D7DED6] bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,27,66,0.35)] sm:p-8; }
+  .login-panel-top { @apply flex items-center justify-between gap-3; }
+  .prototype-tag { @apply rounded-sm bg-[#F8EFCF] px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-[#705500]; }
+  .login-panel h2 { @apply mt-5 text-2xl font-bold tracking-tight text-navy; }
+  .login-subtitle { @apply mt-1 text-sm text-ink-muted; }
+  .login-form { @apply mt-7 flex flex-col gap-2; }
+  .login-label { @apply mt-2 text-sm font-semibold text-ink; }
+  .password-label-row { @apply mt-2 flex items-center justify-between; }
+  .password-label-row .login-label { @apply mt-0; }
+  .login-muted { @apply text-xs text-ink-muted; }
+  .login-input { @apply min-h-[46px] rounded-md border border-[#C9CFDB] bg-white px-3 text-sm text-ink outline-none transition placeholder:text-[#8991A1] focus:border-[#3B7651] focus:ring-2 focus:ring-[#3B7651]/15; }
+  .login-select { @apply mt-1; }
+  .login-submit { @apply mt-4 flex min-h-[48px] items-center justify-between rounded-md bg-navy px-4 text-sm font-semibold text-white transition hover:bg-[#243D7A] focus:outline-none focus:ring-2 focus:ring-[#3B7651] focus:ring-offset-2; }
+  .login-notice { @apply mt-5 border-l-2 border-[#E1B42B] pl-3 text-xs leading-5 text-ink-muted; }
+  .login-footer { @apply mt-7 flex flex-wrap justify-between gap-2 border-t border-surface-line pt-4 text-[11px] text-ink-muted; }
+
+  .role-picker-label { @apply flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted; }
+  .role-picker { @apply min-h-[42px] min-w-[220px] rounded-md border border-surface-border bg-white px-3 text-sm font-semibold normal-case tracking-normal text-ink; }
+  .role-dashboard-heading { @apply flex flex-wrap items-end justify-between gap-4; }
+  .role-dashboard-heading h1 { @apply mt-2; }
+  .role-dashboard-heading .eyebrow span { @apply px-1 text-[#9BA49D]; }
+  .metric-grid { @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-4; }
+  .metric-card { @apply min-h-[142px] border-l-[3px] border-[#9AB7A2] bg-white p-4 shadow-[0_1px_2px_rgba(20,35,25,0.04)]; }
+  .metric-label { @apply text-sm font-semibold text-ink-muted; }
+  .metric-value { @apply mt-3 text-3xl font-bold tracking-tight text-navy; }
+  .metric-value.metric-red { @apply text-[#A92D25]; }
+  .metric-value.metric-green { @apply text-[#23744A]; }
+  .metric-value.metric-gold { @apply text-[#8A6900]; }
+  .metric-detail { @apply mt-1 text-xs text-ink-muted; }
+  .role-queue { @apply p-0; }
+  .role-queue-heading { @apply flex flex-wrap items-center justify-between gap-4 border-b border-surface-line px-5 py-4; }
+  .role-queue-list { @apply divide-y divide-surface-line; }
+  .role-queue-item { @apply flex flex-wrap items-center justify-between gap-3 px-5 py-4; }
+  .role-queue-item h3 { @apply text-sm font-semibold text-ink; }
+  .role-queue-item p { @apply mt-1 text-sm text-ink-muted; }
+  .queue-status { @apply whitespace-nowrap rounded-sm bg-[#EEF1F7] px-2.5 py-1.5 text-xs font-semibold text-navy; }
+  .period-control { @apply flex min-h-[42px] overflow-hidden rounded-md border border-surface-border bg-white; }
+  .period-button { @apply min-w-[42px] px-3 text-xs font-bold text-ink-soft transition hover:bg-surface-soft; }
+  .period-button-active { @apply bg-navy text-white hover:bg-navy-dark; }
+  .review-progress { @apply overflow-hidden rounded-md border border-[#DDE2EC] bg-white; }
+  .review-progress-title { @apply flex flex-wrap items-center gap-x-4 gap-y-1 bg-[#E8ECF3] px-4 py-3 text-xs text-ink-soft; }
+  .review-progress-title strong { @apply text-navy; }
+  .review-progress-track { @apply h-1 bg-[#E8ECF3]; }
+  .review-progress-track span { @apply block h-full bg-[#1F7A3D]; }
+  .teacher-overview-card { @apply justify-between; }
+  .teacher-overview-note { @apply flex items-start gap-2 rounded-md bg-[#F0F3EF] p-3 text-xs leading-5 text-ink-muted; }
+  .teacher-overview-note span { @apply flex h-4 w-4 flex-none items-center justify-center rounded-full bg-[#D9E5DC] text-[10px] font-bold text-[#326441]; }
+  .priority-list { @apply divide-y divide-surface-line; }
+  .priority-item { @apply flex items-center justify-between gap-2 py-3; }
+  .priority-item div { @apply flex min-w-0 flex-col gap-1; }
+  .priority-item strong { @apply text-sm font-semibold text-ink; }
+  .priority-item span:not(.zone-chip) { @apply text-xs text-ink-muted; }
+  .workflow-steps { @apply grid grid-cols-3 gap-2; }
+  .deliberation-steps { @apply grid-cols-2 sm:grid-cols-5; }
+  .workflow-step { @apply flex min-h-[38px] items-center gap-2 rounded-md border border-surface-border bg-white px-3 text-xs font-semibold text-ink-muted; }
+  .workflow-step > span { @apply flex h-5 w-5 flex-none items-center justify-center rounded-full bg-[#E8ECF3] text-[10px] font-bold text-ink-muted; }
+  .workflow-step-active { @apply border-navy bg-[#F0F3F9] text-ink; }
+  .workflow-step-active > span { @apply bg-navy text-white; }
+  .import-source-card { @apply flex min-h-[165px] flex-col gap-2.5 p-3.5; }
+  .import-source-state { @apply whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold; }
+  .import-state-ok { @apply bg-zone-green-bg text-zone-green-fg; }
+  .import-state-warn { @apply bg-zone-yellow-bg text-zone-yellow-fg; }
+  .file-summary { @apply flex min-h-[48px] flex-col justify-center rounded-md border border-dashed border-surface-border bg-surface-soft px-3 py-2 text-xs; }
+  .file-summary strong { @apply truncate font-semibold text-ink; }
+  .file-summary span { @apply mt-0.5 text-ink-muted; }
+  .filter-pill { @apply inline-flex min-h-[34px] items-center gap-1.5 rounded-full border border-surface-border bg-white px-3 text-xs font-semibold text-ink; }
+  .filter-pill span { @apply rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] text-ink-muted; }
+  .filter-pill-active { @apply border-navy bg-navy text-white; }
+  .filter-pill-active span { @apply bg-white/15 text-white; }
+  .student-select-row { @apply flex min-h-[48px] w-full items-center justify-between gap-2 rounded-md border border-surface-border bg-white px-3 py-2 text-left; }
+  .student-select-row > span:first-child { @apply flex min-w-0 flex-col gap-0.5; }
+  .student-select-row strong { @apply text-xs font-semibold text-ink; }
+  .student-select-row > span:first-child > span { @apply truncate text-[10px] text-ink-muted; }
+  .student-select-row-active { @apply border-navy bg-navy-tint; }
+  .intervention-item { @apply flex items-center justify-between gap-2 rounded-md border border-surface-border bg-white px-3 py-2.5; }
+  .intervention-item > div { @apply flex min-w-0 flex-col gap-1; }
+  .intervention-item strong { @apply text-xs font-semibold text-ink; }
+  .intervention-item > div > span { @apply text-[10px] text-ink-muted; }
+  .queue-status-active { @apply bg-zone-green-bg text-zone-green-fg; }
+  .cycle-timeline { @apply flex flex-col gap-2; }
+  .cycle-timeline-item { @apply relative grid grid-cols-[28px_1fr] gap-3; }
+  .cycle-timeline-item:not(:last-child)::after { @apply absolute left-[13px] top-7 h-[calc(100%+8px)] w-px bg-surface-border content-['']; }
+  .cycle-week { @apply z-10 flex h-7 w-7 items-center justify-center rounded-full bg-[#E8ECF3] text-xs font-bold text-ink-muted; }
+  .cycle-week-active { @apply bg-navy text-white; }
+  .cycle-timeline-item article { @apply min-h-[78px] rounded-md border border-surface-border bg-white px-3 py-2.5; }
+  .cycle-timeline-item-current article { @apply border-navy bg-[#F6F8FC]; }
+  .cycle-timeline-item h3 { @apply text-xs font-bold text-ink; }
+  .cycle-timeline-item p { @apply mt-1 text-[10px] leading-4 text-ink-muted; }
+  .cycle-timeline-item a { @apply mt-1 inline-block text-[10px] font-semibold text-navy; }
+  .cycle-status { @apply whitespace-nowrap rounded-full bg-[#EEF1F7] px-2 py-1 text-[10px] font-semibold text-navy; }
+  .cycle-status-done { @apply bg-zone-green-bg text-zone-green-fg; }
+  .cycle-status-current { @apply bg-[#E6ECF8] text-navy-dark; }
+  .cycle-status-overdue { @apply bg-zone-red-bg text-zone-red-fg; }
+  .teacher-encoding-row { @apply flex flex-wrap items-center justify-between gap-2 py-3; }
+  .teacher-encoding-row > div { @apply flex min-w-[100px] flex-1 flex-col gap-1; }
+  .teacher-encoding-row strong { @apply text-xs font-semibold text-ink; }
+  .teacher-encoding-row > div > span { @apply text-[10px] text-ink-muted; }
+  .period-target-panel { @apply rounded-md bg-navy-tint p-4 text-navy-dark; }
+  .period-target-panel ul { @apply mt-2 list-disc pl-4 text-xs leading-5; }
+}
+
+@media (max-width: 640px) {
+  .login-page { @apply items-start py-8; }
+  .login-brand-mark { @apply mb-6; }
+  .login-intro { @apply pb-0; }
+  .login-intro h1 { @apply text-3xl; }
+  .login-term { @apply mt-5; }
+  .login-layout { @apply gap-5; }
+  .login-panel { @apply p-5; }
+  .role-picker { @apply min-w-0 w-full; }
+  .role-picker-label { @apply w-full; }
 }

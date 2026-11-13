@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Sidebar } from '@/components/Sidebar';
+import { AppShell } from '@/components/AppShell';
+import { RoleProvider } from '@/components/RoleProvider';
 
 export const metadata: Metadata = {
   title: 'PHINMAED Student Learning Analytics and Deliberation System',
@@ -18,10 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-sans">
-        <div className="flex min-h-screen flex-col lg:flex-row">
-          <Sidebar />
-          <main className="min-w-0 flex-1 p-5 lg:p-8">{children}</main>
-        </div>
+        <RoleProvider>
+          <AppShell>{children}</AppShell>
+        </RoleProvider>
       </body>
     </html>
   );

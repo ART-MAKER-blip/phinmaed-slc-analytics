@@ -3,7 +3,7 @@ import type { Config } from 'tailwindcss';
 // Brand colors are estimates taken from the PHINMA Education slides and prototype.
 // Replace them with the official values once PHINMA provides its brand guide.
 const config: Config = {
-  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}', './features/**/*.{ts,tsx}'],
   theme: {
     extend: {
       fontFamily: { sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'] },

@@ -22,7 +22,8 @@ npm run build
 
 | Route | Screen |
 |---|---|
-| `/` | Student and subject zones with counts and rates together, flagged students, teacher indicators |
+| `/login` | Demo sign-in with a role picker; credentials are not validated |
+| `/` | Role-specific dashboard; the SLC view includes student and subject zones, flagged students, and teacher indicators |
 | `/imports` | File preview, error report and import history |
 | `/deliberation` | Concern, evidence, agreed action, owner, due date, and referral with a restricted note |
 | `/reports` | Periodic and semester report with program breakdown |
@@ -33,6 +34,6 @@ npm run build
 - Predictive or machine-learning scoring is not included, as the proposal's delimitation requires.
 - Brand colors are estimates. Set the official ones in `tailwind.config.ts`, and add the official logo in `components/Sidebar.tsx`.
 
-## Not built yet
+## Prototype limitations
 
-Login and role enforcement, real imports, saving deliberations and referrals, audit log, and the Dean of Deans, COO and ALC views. The deliberation page has a "Preview as" selector that only demonstrates restricted notes.
+Authentication, server-side role enforcement, real imports, saving deliberations and referrals, audit log, and live reporting are not connected. Dashboard metrics and queue items are sample data. The deliberation page has a "Preview as" selector that only demonstrates restricted notes.

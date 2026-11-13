@@ -1,17 +1,27 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { getRoleLabel } from '@/lib/roles';
+import { useRole } from '@/components/RoleProvider';
 
 const LINKS = [
   { href: '/', label: 'Dashboard', icon: 'M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z' },
-  { href: '/imports', label: 'Data imports', icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
+  { href: '/imports', label: 'Import reports', icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
   { href: '/deliberation', label: 'Deliberation', icon: 'M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z' },
-  { href: '/reports', label: 'Reports', icon: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h6' },
+  { href: '/period-cycle', label: 'Period cycle', icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2z' },
 ];
 
 export function Sidebar() {
   const path = usePathname();
+  const router = useRouter();
+  const { role, signOut } = useRole();
+
+  function handleSignOut() {
+    signOut();
+    router.push('/login');
+  }
+
   return (
     <aside className="flex flex-col gap-7 bg-navy-dark p-4 text-white lg:min-h-screen lg:w-64 lg:flex-none">
       <div className="flex h-1 overflow-hidden rounded" aria-hidden="true">
@@ -52,9 +62,14 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="mt-auto hidden rounded-lg bg-white/10 p-3 text-xs text-white/80 lg:block">
-        <div className="font-semibold text-white">Student Learning Coordinator</div>
-        PHINMA COC · Pilot · Sample data
+      <div className="mt-auto flex items-center justify-between gap-3 rounded-lg bg-white/10 p-3 text-xs text-white/80 lg:block">
+        <div>
+          <div className="font-semibold text-white">{getRoleLabel(role)}</div>
+          PHINMA COC · Demo workspace
+        </div>
+        <button type="button" onClick={handleSignOut} className="min-h-[36px] rounded-md border border-white/25 px-3 font-semibold text-white hover:bg-white/10 lg:mt-3 lg:w-full lg:px-2 lg:text-left">
+          Sign out
+        </button>
       </div>
     </aside>
   );
