@@ -6,6 +6,7 @@ import { writeAudit } from '@/lib/audit';
 import type { AuthUser } from '@/lib/auth';
 import { inScope } from '@/lib/access';
 import { classify, failureRate, validateThresholds, type Zone, type ZoneThreshold } from '@/lib/zones';
+import { InputError, parseCode, parseName, thresholdsFromForm } from '@/lib/admin/validate';
 
 export class SnapshotError extends ApiError {}
 
@@ -381,4 +382,87 @@ export async function listRuns(user: AuthUser, limit = 30): Promise<RunSummary[]
     [campuses.includes(null), campuses.filter((c): c is string => c !== null), limit],
   );
   return result.rows;
+}
+
+/* ---- Draft rule sets (rules.configure) and retirement (rules.approve) ---- */
+
+async function writeThresholds(db: PoolClient, ruleSetId: number, thresholds: ZoneThreshold[]) {
+  await db.query('DELETE FROM zone_threshold WHERE rule_set_id = $1', [ruleSetId]);
+  await db.query(
+    `INSERT INTO zone_threshold (rule_set_id, level, zone_id, min_value, max_value)
+     SELECT $1, u.level, z.zone_id, u.min, u.max
+       FROM unnest($2::text[], $3::text[], $4::numeric[], $5::numeric[]) AS u(level, zone, min, max)
+       JOIN zone z ON z.code = u.zone`,
+    [ruleSetId, thresholds.map((t) => t.level), thresholds.map((t) => t.zone), thresholds.map((t) => t.min), thresholds.map((t) => t.max)],
+  );
+}
+
+function asApiError(error: unknown): never {
+  if (error instanceof InputError) throw new SnapshotError(error.message, 400);
+  if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+    throw new SnapshotError('A rule set with that code already exists.', 409);
+  }
+  throw error;
+}
+
+export async function createDraftRuleSet(user: AuthUser, input: Record<string, unknown>) {
+  return inTransaction(async (db) => {
+    const code = parseCode(input.code, 'Rule set code');
+    const name = parseName(input.name);
+    const thresholds = thresholdsFromForm(input);
+    const term = await db.query<{ term_id: number }>('SELECT term_id FROM term WHERE code = $1', [input.effectiveTerm]);
+    if (!term.rows[0]) throw new SnapshotError('Choose an effective term.');
+    const created = await db.query<{ rule_set_id: number }>(
+      'INSERT INTO zone_rule_set (code, name, effective_term_id) VALUES ($1, $2, $3) RETURNING rule_set_id',
+      [code, name, term.rows[0].term_id],
+    );
+    const id = created.rows[0].rule_set_id;
+    await writeThresholds(db, id, thresholds);
+    await writeAudit({ userId: user.id, action: 'rules_create', tableName: 'zone_rule_set', recordId: id, metadata: { code, effectiveTerm: input.effectiveTerm, thresholds } }, db);
+    return { id };
+  }).catch(asApiError);
+}
+
+async function lockRuleSet(db: PoolClient, id: number) {
+  const r = await db.query<{ code: string; status: string }>('SELECT code, status FROM zone_rule_set WHERE rule_set_id = $1 FOR UPDATE', [id]);
+  if (!r.rows[0]) throw new SnapshotError('Rule set not found.', 404);
+  return r.rows[0];
+}
+
+export async function updateDraftRuleSet(user: AuthUser, id: number, input: Record<string, unknown>) {
+  return inTransaction(async (db) => {
+    const rs = await lockRuleSet(db, id);
+    if (rs.status !== 'draft') throw new SnapshotError('Only draft rule sets can be edited. Create a new draft instead.', 409);
+    const name = parseName(input.name);
+    const thresholds = thresholdsFromForm(input);
+    const term = await db.query<{ term_id: number }>('SELECT term_id FROM term WHERE code = $1', [input.effectiveTerm]);
+    if (!term.rows[0]) throw new SnapshotError('Choose an effective term.');
+    await db.query('UPDATE zone_rule_set SET name = $2, effective_term_id = $3 WHERE rule_set_id = $1', [id, name, term.rows[0].term_id]);
+    await writeThresholds(db, id, thresholds);
+    await writeAudit({ userId: user.id, action: 'rules_update', tableName: 'zone_rule_set', recordId: id, metadata: { code: rs.code, effectiveTerm: input.effectiveTerm, thresholds } }, db);
+    return { id };
+  }).catch(asApiError);
+}
+
+export async function deleteDraftRuleSet(user: AuthUser, id: number) {
+  return inTransaction(async (db) => {
+    const rs = await lockRuleSet(db, id);
+    if (rs.status !== 'draft') throw new SnapshotError('Only draft rule sets can be deleted.', 409);
+    // Thresholds first: the lock trigger checks the parent rule set's status.
+    await db.query('DELETE FROM zone_threshold WHERE rule_set_id = $1', [id]);
+    await db.query('DELETE FROM zone_rule_set WHERE rule_set_id = $1', [id]);
+    await writeAudit({ userId: user.id, action: 'rules_delete', tableName: 'zone_rule_set', recordId: id, metadata: { code: rs.code } }, db);
+    return { id };
+  });
+}
+
+/** Retires an approved rule set; earlier snapshot runs keep it, new calculations stop using it. */
+export async function retireRuleSet(user: AuthUser, id: number) {
+  return inTransaction(async (db) => {
+    const rs = await lockRuleSet(db, id);
+    if (rs.status !== 'approved') throw new SnapshotError('Only approved rule sets can be retired.', 409);
+    await db.query(`UPDATE zone_rule_set SET status = 'retired' WHERE rule_set_id = $1`, [id]);
+    await writeAudit({ userId: user.id, action: 'rules_retire', tableName: 'zone_rule_set', recordId: id, metadata: { code: rs.code } }, db);
+    return { id };
+  });
 }

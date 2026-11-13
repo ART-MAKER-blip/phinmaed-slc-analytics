@@ -12,7 +12,7 @@ export default async function Page() {
 
   const empty = { campuses: [], terms: [], periods: [] };
   if (!process.env.DATABASE_URL) {
-    return <ZonesPage unavailableReason="Zone calculation needs the database. Set DATABASE_URL and run npm run migrate." canCalculate={false} canApprove={false} options={empty} ruleSets={[]} runs={[]} />;
+    return <ZonesPage unavailableReason="Zone calculation needs the database. Set DATABASE_URL and run npm run migrate." canCalculate={false} canApprove={false} canConfigure={false} options={empty} ruleSets={[]} runs={[]} />;
   }
   const unavailableReason = user.isDemo
     ? 'Demo accounts can view rule sets but cannot calculate or approve. Sign in with a database account.'
@@ -28,6 +28,7 @@ export default async function Page() {
       unavailableReason={unavailableReason}
       canCalculate={!user.isDemo && hasPermission(user, 'zones.calculate')}
       canApprove={!user.isDemo && hasPermission(user, 'rules.approve')}
+      canConfigure={!user.isDemo && hasPermission(user, 'rules.configure')}
       options={options}
       ruleSets={ruleSets}
       runs={runs}

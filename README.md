@@ -55,6 +55,9 @@ The app's sample dashboard data is still placeholder data in the code, not saved
 | `/deliberation` | Concerns from flagged results, filtered by status and access |
 | `/deliberation/[concernId]` | Deliberations, interventions with follow-ups, referrals with restricted notes, close/reopen |
 | `/audit` | Audit log review (administrator) |
+| `/admin/users` | Accounts, roles and campus/program scopes, teacher links, password resets |
+| `/admin/reference` | Campuses, programs offered per campus, terms and their dates |
+| `/account` | Your roles and scope; change your password |
 | `/zones` | Rule sets (approve), zone calculation runs, and verification |
 | `/reports` | Periodic and semester reports by program, outcome review, campus comparison, CSV export |
 
@@ -103,6 +106,14 @@ Working assumptions to confirm with PHINMA: the SIS column layout (`lib/imports/
 - Restricted notes live in `referral_note` and are returned only to roles with `referral_note.view`, and for team staff only on their own team's referrals. Note text is never written to the audit log.
 - Every change is re-authorized on the server and audited. Records are not deleted; changes are status updates, and the audit log keeps who changed what from and to.
 
+## Administration
+
+- **Users** (`admin.users`): create accounts with one or more roles, each scoped to a campus (all or one program). New accounts and password resets get a one-time temporary password shown once on screen; it is never stored in readable form or written to the audit log. Deactivating an account signs it out everywhere. Administrators cannot deactivate themselves or remove their own administrator role, and at least one active administrator always remains. A faculty account can be linked to one teacher record so it sees its own classes.
+- **Account**: every user can see their roles and scope and change their password; other sessions are then signed out.
+- **Reference data** (`admin.reference_data`): add campuses, programs and terms, rename them, set term dates, and choose which programs each campus offers. Codes cannot change after creation because imports and reports use them. Term codes must look like `2026-1`. A program with enrolled students cannot be removed from a campus.
+- **Rule sets** (on `/zones`): administrators (`rules.configure`) create, edit and delete drafts from four numbers (where student Yellow and Red start, where subject Green and Yellow end). COO and Dean of Deans (`rules.approve`) approve drafts and retire approved rule sets; past calculations keep the rule set they used.
+- `npm run create-user` and the demo seed still work for setting up the first administrator.
+
 ## Current limitations
 
-The period cycle page still shows sample data. There are no screens yet for creating draft rule sets, managing users and scopes, or linking accounts to teachers. Excel files must be saved as CSV before import.
+The period cycle page still shows sample data. Excel files must be saved as CSV before import. One open concern per student per term is suggested by the new-concern list but not enforced by the database.

@@ -27,10 +27,16 @@ export const ROUTE_PERMISSIONS: Record<string, readonly Permission[]> = {
   '/reports': ['report.view'],
   '/zones': ['zones.calculate', 'rules.approve', 'rules.configure'],
   '/audit': ['audit.view'],
+  '/admin': ['admin.users', 'admin.reference_data'],
+  '/admin/users': ['admin.users'],
+  '/admin/reference': ['admin.reference_data'],
 };
 
 export function canOpenRoute(user: Pick<AccessUser, 'permissions'>, path: string) {
-  const route = Object.keys(ROUTE_PERMISSIONS).find((r) => path === r || path.startsWith(`${r}/`));
+  // The most specific listed route wins, so /admin/users/1 uses /admin/users, not /admin.
+  const route = Object.keys(ROUTE_PERMISSIONS)
+    .filter((r) => path === r || path.startsWith(`${r}/`))
+    .sort((a, b) => b.length - a.length)[0];
   if (!route) return true;
   return ROUTE_PERMISSIONS[route].some((permission) => hasPermission(user, permission));
 }
