@@ -6,7 +6,7 @@ import { ZoneChip, ZONE_SOLID } from '@/components/ZoneChip';
 import { FLAGGED_STUDENTS, STUDENTS, subjectRows, teacherIndicators } from '@/lib/data';
 import { DEFAULT_RULES, ZONES, ZONE_LABEL, studentZone, summarize } from '@/lib/zones';
 import { useRole } from '@/components/RoleProvider';
-import { ROLES, type RoleId } from '@/lib/roles';
+import type { RoleId } from '@/lib/roles';
 
 type RoleDashboardContent = {
   eyebrow: string;
@@ -113,19 +113,7 @@ const ROLE_DASHBOARDS: Record<Exclude<RoleId, 'slc'>, RoleDashboardContent> = {
   },
 };
 
-function RolePicker({ role, onChange }: { role: RoleId; onChange: (role: RoleId) => void }) {
-  return (
-    <label className="role-picker-label">Preview workspace
-      <select className="role-picker" value={role} onChange={(event) => onChange(event.target.value as RoleId)}>
-        {ROLES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-      </select>
-    </label>
-  );
-}
-
 function RoleDashboard({ content }: { content: RoleDashboardContent }) {
-  const { role, setRole } = useRole();
-
   return (
     <div className="flex flex-col gap-6">
       <header className="role-dashboard-heading">
@@ -134,7 +122,6 @@ function RoleDashboard({ content }: { content: RoleDashboardContent }) {
           <h1 className="text-3xl font-bold tracking-tight text-navy">{content.title}</h1>
           <p className="mt-1.5 text-ink-muted">{content.description}</p>
         </div>
-        <RolePicker role={role} onChange={setRole} />
       </header>
       <section className="metric-grid" aria-label="Key metrics">
         {content.metrics.map((metric) => (
@@ -217,7 +204,7 @@ function ZoneSummary({
 }
 
 export default function DashboardPage() {
-  const { role, setRole } = useRole();
+  const { role } = useRole();
   const [period, setPeriod] = useState(1);
   const studentSummary = summarize(STUDENTS, (s) => studentZone(s.failedSubjects));
   const subjectSummary = summarize(subjectRows, (s) => s.zone);
@@ -233,7 +220,6 @@ export default function DashboardPage() {
           <p className="mt-1.5 text-sm text-ink-muted">PHINMA COC · Period {period} grades · Bachelor of Science in Information Technology</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
-          <RolePicker role={role} onChange={setRole} />
           <div className="period-control" role="group" aria-label="Grade period">
             {[1, 2, 3].map((item) => (
               <button key={item} type="button" aria-pressed={period === item} onClick={() => setPeriod(item)} className={period === item ? 'period-button period-button-active' : 'period-button'}>

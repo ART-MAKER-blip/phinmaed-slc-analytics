@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { getRoleLabel } from '@/lib/roles';
 import { useRole } from '@/components/RoleProvider';
 
@@ -15,11 +16,19 @@ const LINKS = [
 export function Sidebar() {
   const path = usePathname();
   const router = useRouter();
-  const { role, signOut } = useRole();
+  const { user } = useRole();
+  const [signOutError, setSignOutError] = useState('');
 
-  function handleSignOut() {
-    signOut();
-    router.push('/login');
+  async function handleSignOut() {
+    setSignOutError('');
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!response.ok) throw new Error('Sign out failed. Please try again.');
+      router.replace('/login');
+      router.refresh();
+    } catch (error) {
+      setSignOutError(error instanceof Error ? error.message : 'Sign out failed. Please try again.');
+    }
   }
 
   return (
@@ -64,12 +73,16 @@ export function Sidebar() {
       </nav>
       <div className="mt-auto flex items-center justify-between gap-3 rounded-lg bg-white/10 p-3 text-xs text-white/80 lg:block">
         <div>
-          <div className="font-semibold text-white">{getRoleLabel(role)}</div>
-          PHINMA COC · Demo workspace
+          <div className="font-semibold text-white">{user.name}</div>
+          <div>{user.email}</div>
+          <div>{getRoleLabel(user.role)}</div>
         </div>
-        <button type="button" onClick={handleSignOut} className="min-h-[36px] rounded-md border border-white/25 px-3 font-semibold text-white hover:bg-white/10 lg:mt-3 lg:w-full lg:px-2 lg:text-left">
-          Sign out
-        </button>
+        <div>
+          <button type="button" onClick={handleSignOut} className="min-h-[36px] rounded-md border border-white/25 px-3 font-semibold text-white hover:bg-white/10 lg:mt-3 lg:w-full lg:px-2 lg:text-left">
+            Sign out
+          </button>
+          {signOutError && <p role="alert" className="mt-2 text-xs text-red-200">{signOutError}</p>}
+        </div>
       </div>
     </aside>
   );

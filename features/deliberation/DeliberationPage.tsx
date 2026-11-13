@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { ZoneChip } from '@/components/ZoneChip';
-import { FLAGGED_STUDENTS, REFERRAL_TEAMS, ROLES, subjectRows } from '@/lib/data';
+import { FLAGGED_STUDENTS, REFERRAL_TEAMS, subjectRows } from '@/lib/data';
 import { studentZone } from '@/lib/zones';
+import { useRole } from '@/components/RoleProvider';
+import { ROLES } from '@/lib/roles';
 
 type Filter = 'All' | 'Academic' | 'Non-academic';
 
@@ -15,9 +17,9 @@ const STARTING_INTERVENTIONS = [
 ];
 
 export default function DeliberationPage() {
+  const { role: roleId } = useRole();
   const [filter, setFilter] = useState<Filter>('All');
   const [selectedId, setSelectedId] = useState(FLAGGED_STUDENTS[0].id);
-  const [roleId, setRoleId] = useState<(typeof ROLES)[number]['id']>('slc');
   const [referralTo, setReferralTo] = useState<string>(REFERRAL_TEAMS[1]);
   const [activeStep, setActiveStep] = useState(2);
   const [interventions, setInterventions] = useState(STARTING_INTERVENTIONS);
@@ -52,12 +54,7 @@ export default function DeliberationPage() {
           <p className="mt-1.5 text-sm text-ink-muted">Period 1 · Review each student at risk and agree on support</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
-          <div className="w-64">
-            <label htmlFor="role" className="mb-1 block text-xs font-semibold text-ink-muted">Preview as</label>
-            <select id="role" className="field min-h-[40px]" value={roleId} onChange={(event) => setRoleId(event.target.value as typeof roleId)}>
-              {ROLES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-          </div>
+          <span className="text-sm font-semibold text-ink-muted">{role.label}</span>
           <button type="button" className="btn btn-primary min-h-[40px]" onClick={() => setSaved('Deliberation report prepared for this demo.')}>Export deliberation report</button>
         </div>
       </header>

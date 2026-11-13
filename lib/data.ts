@@ -102,10 +102,3 @@ export const REFERRAL_TEAMS = [
   'Student Success Program (SSP) adviser',
   'Kasama Support Hub (KSH)',
 ] as const;
-
-export const ROLES = [
-  { id: 'slc', label: 'Student Learning Coordinator', canSeeRestricted: true },
-  { id: 'dean', label: 'Dean / Program Head', canSeeRestricted: false },
-  { id: 'ssp', label: 'SSP adviser', canSeeRestricted: false },
-  { id: 'ksh', label: 'Kasama Support Hub staff', canSeeRestricted: true },
-] as const;

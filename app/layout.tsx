@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { AppShell } from '@/components/AppShell';
-import { RoleProvider } from '@/components/RoleProvider';
 
 export const metadata: Metadata = {
   title: 'PHINMAED Student Learning Analytics and Deliberation System',
@@ -19,9 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-sans">
-        <RoleProvider>
-          <AppShell>{children}</AppShell>
-        </RoleProvider>
+        {children}
       </body>
     </html>
   );
