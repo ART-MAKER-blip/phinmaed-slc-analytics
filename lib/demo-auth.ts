@@ -1,17 +1,22 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { ROLES, type RoleId } from '@/lib/roles';
+import { ROLE_PERMISSIONS } from '@/lib/permissions';
 import type { AuthUser } from '@/lib/auth';
 
 export const DEMO_PASSWORD = 'SLCdemo-2026!';
 const DEMO_SESSION_PREFIX = 'demo.';
 const DEMO_SESSION_SECRET = 'local-development-demo-sessions-only';
 
-export const DEMO_USERS = ROLES.map((role) => ({
+export const DEMO_USERS: AuthUser[] = ROLES.map((role) => ({
   id: `demo-${role.id}`,
   email: `${role.id}.demo@example.test`,
   name: `Demo ${role.label}`,
   role: role.id,
-})) satisfies AuthUser[];
+  roles: [role.id],
+  permissions: [...ROLE_PERMISSIONS[role.id]],
+  scopes: [{ campus: 'COC', program: null }],
+  isDemo: true,
+}));
 
 function signature(role: RoleId) {
   return createHmac('sha256', DEMO_SESSION_SECRET).update(`${DEMO_SESSION_PREFIX}${role}`).digest('hex');
@@ -28,7 +33,7 @@ export function createDemoSession(role: RoleId) {
 
 export function getDemoUserFromSession(token: string): AuthUser | null {
   if (process.env.NODE_ENV !== 'development') return null;
-  const match = /^demo\.([a-z]+)\.([a-f0-9]{64})$/.exec(token);
+  const match = /^demo\.([a-z_]+)\.([a-f0-9]{64})$/.exec(token);
   if (!match) return null;
   const role = match[1];
   if (!ROLES.some((item) => item.id === role)) return null;

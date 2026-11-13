@@ -61,3 +61,51 @@ export function summarize<T>(items: T[], pick: (item: T) => Zone) {
   };
   return { total, counts, rates };
 }
+
+/* ---- Rule sets stored in the database (zone_threshold rows) ---- */
+
+export type ZoneLevel = 'student' | 'subject';
+export type ZoneThreshold = { level: ZoneLevel; zone: Zone; min: number; max: number | null };
+
+/**
+ * Zone for a value under a stored rule set. Subject rates are rounded to 2 decimals
+ * first, so the documented boundaries (10 / 10.01, 40 / 40.01) have no gap between them.
+ */
+export function classify(thresholds: ZoneThreshold[], level: ZoneLevel, value: number): Zone {
+  const rounded = Math.round(value * 100) / 100;
+  const match = thresholds.find(
+    (t) => t.level === level && rounded >= t.min && (t.max === null || rounded <= t.max),
+  );
+  if (!match) throw new Error(`No ${level} zone covers ${rounded} in this rule set.`);
+  return match.zone;
+}
+
+/** Problems that would make a rule set unusable. An empty list means it can be approved. */
+export function validateThresholds(thresholds: ZoneThreshold[]): string[] {
+  const errors: string[] = [];
+  for (const level of ['student', 'subject'] as const) {
+    const rows = ZONES.map((zone) => thresholds.find((t) => t.level === level && t.zone === zone));
+    if (rows.some((r) => !r)) {
+      errors.push(`The ${level} level needs a green, a yellow and a red range.`);
+      continue;
+    }
+    const [green, yellow, red] = rows as ZoneThreshold[];
+    if (green.min !== 0) errors.push(`The ${level} green range must start at 0.`);
+    const step = level === 'student' ? 1 : 0.01;
+    for (const [low, high] of [[green, yellow], [yellow, red]] as const) {
+      if (low.max === null) {
+        errors.push(`The ${level} ${low.zone} range needs an upper limit.`);
+        continue;
+      }
+      if (Math.abs(high.min - (low.max + step)) > 1e-9) {
+        errors.push(`The ${level} ${high.zone} range must start right after ${low.zone} ends (${low.max} → ${low.max + step}).`);
+      }
+    }
+    if (level === 'subject' && red.max !== 100) errors.push('The subject red range must end at 100%.');
+    if (level === 'student' && red.max !== null) errors.push('The student red range must have no upper limit.');
+    if (level === 'student' && rows.some((r) => !Number.isInteger(r!.min) || (r!.max !== null && !Number.isInteger(r!.max)))) {
+      errors.push('Student ranges count failed subjects, so they must be whole numbers.');
+    }
+  }
+  return errors;
+}

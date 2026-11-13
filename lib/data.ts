@@ -3,7 +3,9 @@
  * Replace these lists with queries to PostgreSQL once the schema in the proposal's
  * ERD (Appendix C) is implemented.
  */
-import { failureRate, studentZone, subjectZone, type Zone } from './zones';
+import type { ZoneOverview } from '@/lib/results/types';
+import type { Permission } from './permissions';
+import { DEFAULT_RULES, failureRate, studentZone, subjectZone, type Zone, type ZoneThreshold } from './zones';
 
 export type ConcernType = 'Academic' | 'Non-academic';
 
@@ -64,41 +66,51 @@ export const teacherIndicators = [...SUBJECTS]
   .sort((a, b) => a.teacher.localeCompare(b.teacher))
   .map((s) => ({ teacher: s.teacher, classes: 1, enrolled: s.enrolled, failed: s.failed, rate: failureRate(s.failed, s.enrolled) }));
 
-/* ---- Imports ---- */
-export interface ImportBatch {
-  id: string;
-  file: string;
-  source: 'SIS' | 'Team Data';
-  uploadedBy: string;
-  uploadedAt: string;
-  rows: number;
-  status: 'Accepted' | 'Needs review' | 'Rejected';
+/* ---- Sample zone overview (demo accounts and no-database mode) ---- */
+
+export function sampleOverview(permissions: readonly Permission[]): ZoneOverview {
+  const thresholds: ZoneThreshold[] = [
+    { level: 'student', zone: 'green', min: 0, max: DEFAULT_RULES.student.yellowMin - 1 },
+    { level: 'student', zone: 'yellow', min: DEFAULT_RULES.student.yellowMin, max: DEFAULT_RULES.student.redMin - 1 },
+    { level: 'student', zone: 'red', min: DEFAULT_RULES.student.redMin, max: null },
+    { level: 'subject', zone: 'green', min: 0, max: DEFAULT_RULES.subject.greenMax },
+    { level: 'subject', zone: 'yellow', min: DEFAULT_RULES.subject.greenMax + 0.01, max: DEFAULT_RULES.subject.yellowMax },
+    { level: 'subject', zone: 'red', min: DEFAULT_RULES.subject.yellowMax + 0.01, max: 100 },
+  ];
+  const count = <T,>(items: T[], zone: (item: T) => Zone) => {
+    const counts = { green: 0, yellow: 0, red: 0 };
+    for (const item of items) counts[zone(item)] += 1;
+    return counts;
+  };
+  const overview: ZoneOverview = {
+    source: 'sample',
+    run: { runId: 0, campus: 'COC', campusName: 'PHINMA Cagayan de Oro College', term: '2026-1', period: 'P1', ruleSet: DEFAULT_RULES.id, calculatedAt: new Date(0).toISOString() },
+    programs: 'all',
+    thresholds,
+  };
+  if (permissions.includes('results.student')) {
+    overview.students = {
+      counts: count(STUDENTS, (s) => studentZone(s.failedSubjects)),
+      total: STUDENTS.length,
+      atRisk: FLAGGED_STUDENTS.slice(0, 10).map((s) => ({
+        id: s.id, name: s.id, program: s.program, yearLevel: s.yearLevel, failed: s.failedSubjects, zone: studentZone(s.failedSubjects),
+      })),
+      atRiskTotal: FLAGGED_STUDENTS.length,
+    };
+  }
+  if (permissions.includes('results.subject')) {
+    const rows = [...subjectRows].sort((a, b) => b.rate - a.rate).slice(0, 10);
+    overview.subjects = {
+      counts: count(subjectRows, (s) => s.zone),
+      total: subjectRows.length,
+      rows: rows.map((s) => ({
+        key: s.code, code: s.code, section: 'A', title: s.code, failed: s.failed, graded: s.enrolled, rate: s.rate, zone: s.zone,
+        teachers: permissions.includes('results.teacher')
+          ? [{ name: s.teacher, failed: s.failed, students: s.enrolled, rate: s.rate }]
+          : undefined,
+      })),
+    };
+  }
+  if (permissions.includes('results.teacher')) overview.teachers = { total: teacherIndicators.length };
+  return overview;
 }
-
-export const IMPORT_HISTORY: ImportBatch[] = [
-  { id: 'IB-0003', file: 'P1_grades_2026-1.csv', source: 'SIS', uploadedBy: 'Data manager 1', uploadedAt: '2026-10-27 09:12', rows: 1036, status: 'Needs review' },
-  { id: 'IB-0002', file: 'P1_attendance_2026-1.csv', source: 'SIS', uploadedBy: 'Data manager 1', uploadedAt: '2026-10-27 09:05', rows: 1036, status: 'Accepted' },
-  { id: 'IB-0001', file: 'teamdata_2026-1.xlsx', source: 'Team Data', uploadedBy: 'Data manager 2', uploadedAt: '2026-10-26 15:40', rows: 148, status: 'Rejected' },
-];
-
-export const IMPORT_ISSUES = [
-  { kind: 'Missing column', count: 0, detail: 'All required columns are present: student_id, course_code, term, program, grade, result_status.' },
-  { kind: 'Duplicate records', count: 2, detail: 'Rows 214 and 507 repeat the same student and course in the same term.' },
-  { kind: 'Unmatched identifiers', count: 3, detail: 'Three student IDs are not in the enrollment list for the selected term.' },
-  { kind: 'Term or program mapping', count: 1, detail: 'Row 88 uses program code BSIT-X, which is not mapped to a program.' },
-];
-
-export const IMPORT_PREVIEW = [
-  { row: 1, student: 'Student 014', course: 'Subject A', term: '2026-1', grade: '68', result: 'Failed', ok: true },
-  { row: 2, student: 'Student 014', course: 'Subject B', term: '2026-1', grade: '74', result: 'Passed', ok: true },
-  { row: 88, student: 'Student 072', course: 'Subject A', term: '2026-1', grade: '71', result: 'Passed', ok: false },
-  { row: 214, student: 'Student 101', course: 'Subject C', term: '2026-1', grade: '70', result: 'Passed', ok: false },
-  { row: 215, student: 'Student 033', course: 'Subject D', term: '2026-1', grade: '75', result: 'Passed', ok: true },
-];
-
-/* ---- Deliberation ---- */
-export const REFERRAL_TEAMS = [
-  'Active Learning Coordinator (ALC)',
-  'Student Success Program (SSP) adviser',
-  'Kasama Support Hub (KSH)',
-] as const;

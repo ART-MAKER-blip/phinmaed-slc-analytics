@@ -3,6 +3,7 @@ import { loadEnvConfig } from '@next/env';
 import { getPool } from '@/lib/database';
 import { hashPassword } from '@/lib/password';
 import { ROLES } from '@/lib/roles';
+import { assignRoleAtCampus } from './user-roles';
 
 async function main() {
   loadEnvConfig(process.cwd());
@@ -25,16 +26,18 @@ async function main() {
       const password = randomBytes(18).toString('base64url');
       const passwordHash = await hashPassword(password);
 
-      await client.query(
-        `INSERT INTO app_users (email, name, password_hash, role)
-         VALUES ($1, $2, $3, $4)
+      const user = await client.query<{ id: string }>(
+        `INSERT INTO app_users (email, name, password_hash)
+         VALUES ($1, $2, $3)
          ON CONFLICT (lower(email)) DO UPDATE
            SET name = EXCLUDED.name,
                password_hash = EXCLUDED.password_hash,
-               role = EXCLUDED.role,
-               active = TRUE`,
-        [email, name, passwordHash, role.id],
+               active = TRUE
+         RETURNING id`,
+        [email, name, passwordHash],
       );
+      await client.query('DELETE FROM user_role WHERE user_id = $1', [user.rows[0].id]);
+      await assignRoleAtCampus(client, user.rows[0].id, role.id, 'COC');
       credentials.push({ name, email, role: role.id, password });
     }
     await client.query('COMMIT');

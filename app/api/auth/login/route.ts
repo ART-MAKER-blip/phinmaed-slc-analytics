@@ -3,6 +3,7 @@ import { createSession, SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth'
 import { getPool } from '@/lib/db';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '@/lib/password';
 import { createDemoSession, verifyDemoCredentials } from '@/lib/demo-auth';
+import { writeAuditBestEffort } from '@/lib/audit';
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -43,15 +44,36 @@ export async function POST(request: Request) {
     id: string;
     password_hash: string;
     active: boolean;
-  }>('SELECT id, password_hash, active FROM app_users WHERE lower(email) = $1 LIMIT 1', [email]);
+    has_role: boolean;
+  }>(
+    `SELECT id, password_hash, active,
+            EXISTS (SELECT 1 FROM user_role ur WHERE ur.user_id = app_users.id) AS has_role
+       FROM app_users WHERE lower(email) = $1 LIMIT 1`,
+    [email],
+  );
   const user = result.rows[0];
   const passwordMatches = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
 
   if (!user || !user.active || !passwordMatches) {
+    await writeAuditBestEffort({
+      userId: user?.id ?? null,
+      action: 'login_failed',
+      tableName: 'app_users',
+      metadata: user ? { reason: user.active ? 'wrong_password' : 'inactive' } : { reason: 'unknown_email', email },
+    });
     return NextResponse.json({ error: 'Email or password is incorrect.' }, { status: 401 });
   }
 
+  if (!user.has_role) {
+    await writeAuditBestEffort({ userId: user.id, action: 'login_failed', tableName: 'app_users', metadata: { reason: 'no_role' } });
+    return NextResponse.json(
+      { error: 'Your account has no role assigned yet. Contact your system administrator.' },
+      { status: 403 },
+    );
+  }
+
   const token = await createSession(user.id);
+  await writeAuditBestEffort({ userId: user.id, action: 'login', tableName: 'app_users', recordId: user.id });
   const response = NextResponse.json({ ok: true });
   response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
   return response;
