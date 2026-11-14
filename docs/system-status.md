@@ -1,74 +1,73 @@
 # What the system can do so far
 
-Status as of November 2026, compared with the proposal's objectives (Section IV) and functional test cases (Appendix F). "Done" means it works against the PostgreSQL database and was tested end to end; it has not yet been tested with real PHINMA COC data.
+Status as of November 14, 2026, compared with the proposal's objectives (Section IV) and functional test cases (Appendix F). "Done" means it works against PostgreSQL and was tested end to end with the dummy data. The importer and zone calculation were also run once against a real COC export (13,461 rows) in a temporary database, which was deleted afterwards.
 
 ## Summary
 
-The full grading-period cycle works: import SIS grade files with validation, calculate zones with an approved rule set, review results on dashboards and in reports, record deliberations, interventions, follow-ups and referrals, and review the audit log. Access is enforced on the server by role, campus and program.
+The grading-period cycle works with the real SIS **Grade Deliberation Report** format: import the `.xlsx` or `.csv` export with validation, calculate student, subject and teacher zones for P1, P2 and P3 with an approved rule set, review dashboards and reports (by program, year level and period trend), record deliberations, interventions and referrals, and review the audit log. There are four users: SLC, Team Learning Lead, COO (view only) and System Administrator.
+
+## Changes from the approved proposal
+
+| Proposal | Now | Why |
+|---|---|---|
+| Teacher results are indicators only, with no zone | Teachers get Green/Yellow/Red zones (same limits as subjects) | Matches the client's SLC collated summary. **Needs the adviser's or panel's agreement.** |
+| Many user roles (Deans, Faculty, ALC, SSP, KSH, Dean of Deans, Team Learning, Data Manager, …) | Four roles: SLC, Team Learning Lead, COO (view only), System Administrator | The client named these as the final users. ALC, SSP and KSH referrals are recorded by the SLC. |
+| Grades per period with a pass/fail status | Period scores P1–P3 from one export, a passing mark, and configurable `NA`/`INC`/`ABS` handling | Matches the real SIS export. |
 
 ## Objectives
 
 | # | Objective | Status | Notes |
 |---|---|---|---|
-| 1 | Import module with validation, preview and error report | Done | CSV only (Excel must be saved as CSV). Checks columns, missing values, duplicates, identifiers, term/period and program mapping. |
-| 2 | Preserve each import's original file, date, uploader and status | Done | Original file stored with a checksum; downloadable. |
-| 3 | Configurable rule engine tied to an effective term | Done | Rule sets are drafted, approved (then locked) and retired in the app. |
-| 4 | Student, subject and teacher views by term, year level, program and campus, with counts and rates | Mostly done | Dashboards and reports by term, period, program and campus. Year level is shown per student but is not yet a report filter. Dashboards list the top 10 at-risk students and subjects; there are no full Students / Subjects / Teachers list pages yet. |
-| 5 | Deliberation records: concerns, evidence, actions, owners, due dates, follow-ups, outcomes | Done | |
-| 6 | Referrals to ALC, SSP and KSH with restricted notes | Done | Teams see only their own referrals; notes only for permitted roles. |
-| 7 | Periodic and semester reports for Deans, COOs, Team Learning and the Dean of Deans | Done | CSV export, scoped to the user. No PDF export yet. |
-| 8 | Outcome tracking | Done | Movement out of Yellow/Red between periods, intervention completion, and each student's or subject's zone per period. |
-| 9 | Role-based access by campus and program, with audit logging | Done | 11 roles, 23 permissions; enforced on every page and API call. |
-| 10 | Usability and effectiveness evaluation | Not started | Research activity for the testing phase (Appendix F questionnaire). |
+| 1 | Import module with validation, preview and error report | Done | Real SIS layout, `.xlsx` and `.csv`. Errors skip a row; warnings are imported. Handles the export's quirks (apostrophe IDs, spaces, `-`, year level from `SEMESTER`). |
+| 2 | Preserve each import's original file, date, uploader and status | Done | Original file stored with a checksum; downloadable; same file cannot be imported twice. |
+| 3 | Configurable rule engine tied to an effective term | Done | Thresholds, passing mark, failed/skipped values and P3 remarks are rule set settings; approved rule sets lock. |
+| 4 | Student, subject and teacher views by term, year level, program and campus, with counts and rates | Mostly done | Dashboards and reports by term, period, program, year level and campus. Dashboards list the top 10 students, subject sections and teachers; there are no full list pages yet. |
+| 5 | Deliberation records | Done | |
+| 6 | Referrals with restricted notes | Done | Recorded by the SLC; SSP referrals record the student's SSP adviser; notes visible to the SLC only. |
+| 7 | Periodic and semester reports | Done | CSV export, scoped to the user. No PDF yet. |
+| 8 | Outcome tracking | Done | Outcome review between periods, period trend (P1 → P2 → P3), intervention completion. |
+| 9 | Role-based access by campus and program, with audit logging | Done | 4 roles, 21 permissions, enforced on every page and API call. |
+| 10 | Usability and effectiveness evaluation | Not started | Research activity for the testing phase. |
 
 ## Functional test cases (Appendix F)
 
 | # | Test | Status | How to check |
 |---|---|---|---|
 | 1 | Login / authentication | Pass | Sign in; the dashboard matches the role. |
-| 2 | Role-based access | Pass | Pages not allowed for a role are hidden and show "You do not have access" if opened directly. |
-| 3 | Campus / program scoping | Pass | A Dean scoped to BSIT sees only BSIT, even when asking for another program. |
-| 4 | Data import | Pass | Upload `samples/grades_2026-1_P1.csv`, then accept. |
-| 5 | Import validation | Pass | Upload `samples/grades_with_errors.csv`. |
-| 6 | Import audit record | Pass | Import history and the batch page show file, date, uploader, status; original file downloads unchanged. |
-| 7 | Student zone computation | Pass | 0 / 1 / 2+ failed subjects → Green / Yellow / Red (also unit tested). |
+| 2 | Role-based access | Pass | The COO opening Imports, Zones, Deliberation, Administration or Audit log sees "You do not have access". |
+| 3 | Campus / program scoping | Pass | An account scoped to one program sees only that program. |
+| 4 | Data import | Pass | Upload `data/dummy_sis_grades_sample.csv` (term 2025-2) and accept. |
+| 5 | Import validation | Pass | Upload `data/dummy_sis_grades_errors.csv`. |
+| 6 | Import audit record | Pass | Batch page and import history; original file downloads unchanged. |
+| 7 | Student zone computation | Pass | 0 / 1 / 2+ failed subjects (unit tested, including the failed-subject rules). |
 | 8 | Subject zone computation | Pass | 10% / 10.01% / 40% / 40.01% → Green / Yellow / Yellow / Red (unit tested). |
-| 9 | Zone rule set by term | Pass | A new rule set applies from its effective term; earlier runs keep their rule set and results. |
-| 10 | Teacher-level view | Pass | Counts and rates only; no zone, rank or rating. |
-| 11 | Cross-campus comparison | Pass | Reports → Campus comparison, same definitions and denominators. Only COC has data in the pilot. |
+| 9 | Zone rule set by term | Pass | A new rule set applies from its effective term; earlier runs keep theirs. |
+| 10 | Teacher-level view | Changed | Teachers now get zones (see "Changes from the approved proposal"). |
+| 11 | Cross-campus comparison | Pass | Reports → Campus comparison (only COC has data in the pilot). |
 | 12 | Concern and deliberation record | Pass | |
 | 13 | Intervention and follow-up | Pass | |
 | 14 | Referral creation | Pass | |
-| 15 | Restricted referral notes | Pass | Dean and ALC see "Restricted notes are hidden"; KSH sees only KSH notes. |
-| 16 | Outcome review | Pass | Reports → Outcome review after calculating two periods. |
+| 15 | Restricted referral notes | Pass | Only SLC accounts see notes; the Team Learning Lead and COO cannot open concerns. |
+| 16 | Outcome review | Pass | Reports after calculating two periods. |
 | 17 | Periodic report | Pass | |
-| 18 | Semester report | Pass | Report type → Semester. |
-| 19 | Report access and export | Pass | Exports contain only the user's scope; out-of-scope requests are refused. |
-| 20 | Snapshot reproducibility | Pass | Zones → Verify, including after a grade is later corrected. |
-| 21 | Audit logging | Pass, with a difference | Creates and edits are logged with before/after values. Records are never deleted (they are closed, cancelled or deactivated instead), so there is no delete to log. |
+| 18 | Semester report | Pass | Report type → Semester (proposal said "as the Dean of Deans"; now the Team Learning Lead or COO). |
+| 19 | Report access and export | Pass | Exports contain only the user's scope. |
+| 20 | Snapshot reproducibility | Pass | Zones → Verify, including after a newer export updated the scores. |
+| 21 | Audit logging | Pass, with a difference | Creates and edits are logged with before/after values; records are closed or deactivated rather than deleted. |
 
-Automated tests: `npm test` runs 42 unit tests covering zone rules, import validation, access rules, restricted notes and administration checks.
+Automated tests: `npm test` runs 46 unit tests covering the SIS importer, period and zone rules, access rules, restricted notes and administration checks.
 
 ## Not done yet
 
 - **Period cycle** page still shows sample data.
-- **Attendance and permit files** cannot be imported yet; the ERD has no tables for them.
-- **Excel files** must be saved as CSV before import.
-- **Full list pages** for Students, Subjects and Teachers (as in the Figma prototype) are not built; dashboards show the top 10.
-- **Year level** filter in reports.
+- **Attendance and permit files** cannot be imported; only the grade deliberation report.
+- **Full list pages** for students, subjects and teachers; dashboards show the top 10.
 - **PDF export** of reports.
-- **Forgot password** link on the login page; an administrator resets passwords instead.
-- **One open concern per student per term** is suggested by the form but not enforced.
-- **Email or in-app notifications** (for example when a referral is sent).
-- **Production deployment**: HTTPS, sign-in rate limiting, backups and monitoring still need to be set up.
+- **Forgot password** link; the administrator resets passwords.
+- **Notifications** (for example when a referral is sent).
+- **Accounts for ALC, SSP and KSH** if the client later wants them (the access rules already support it).
+- **Production deployment**: HTTPS, sign-in rate limiting, backups and monitoring.
 
-## Assumptions to confirm with PHINMA
+## Open questions for the client
 
-These are working assumptions in the current build:
-
-- **SIS file columns**: `student_id, last_name, first_name, program, year_level, course_code, course_title, section, result_status`, plus optional `grade, teacher_id, teacher_name, attempt, term, period`.
-- **Grade scale**: grades are stored as text and not range-checked.
-- **Result statuses**: Failed counts as a failed subject. INC counts in the subject's denominator but not as failed. Dropped, withdrawn and no-grade are left out of the denominator. A student's latest attempt counts.
-- **Zone thresholds**: the shared definitions from the proposal (student 0 / 1 / 2+; subject 0–10% / 10.01–40% / 40.01–100%, rates rounded to 2 decimals).
-- **Programs and terms**: BSIT, BSEd, BSBA and BSCrim at COC, and terms 2026-1 and 2026-2, are placeholders. Administrators can change these in the app.
-- **Named students in reports**: dashboards show student names to roles allowed to see student results; reports and exports show counts only.
+See [Open questions for the client](../README.md#open-questions-for-the-client) in the README: teacher zones, passing mark, `NA`/`INC`/`ABS`, P3 remarks, zero scores, thresholds, year level, other-college rows, teacher identity, referrals, roles and term codes.

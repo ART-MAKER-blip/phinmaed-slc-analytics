@@ -139,7 +139,7 @@ export default function ConcernDetailPage({ detail, staff, interventionTypes }: 
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <strong>{TEAM_LABEL[r.team] ?? r.team_name}</strong>
-                      <div className="text-xs text-ink-muted">Referred {r.referral_date} by {r.referred_by}</div>
+                      <div className="text-xs text-ink-muted">Referred {r.referral_date} by {r.referred_by}{r.recipient ? ` · to ${r.recipient}` : ''}</div>
                     </div>
                     {r.canUpdate && !closed
                       ? <ReferralStatusControl concernId={c.concern_id} referralId={r.referral_id} status={r.status} />

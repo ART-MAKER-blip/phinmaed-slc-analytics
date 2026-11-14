@@ -6,7 +6,7 @@ import { canOpenRoute, inScope, programsAtCampus, scopeCondition } from './acces
 import { PERMISSIONS, ROLE_PERMISSIONS, type Permission } from './permissions';
 import { ROLES } from './roles';
 
-const MIGRATION = readFileSync(path.join(__dirname, '..', 'db', 'migrations', '002_erd_schema.sql'), 'utf8');
+const MIGRATION = readFileSync(path.join(__dirname, '..', 'db', 'migrations', '002_schema.sql'), 'utf8');
 
 function sqlRoleGrants() {
   const grants = new Map<string, string[]>();
@@ -37,25 +37,24 @@ const as = (...permissions: Permission[]) => ({ permissions });
 test('routes open only for roles with a matching permission', () => {
   const user = (role: keyof typeof ROLE_PERMISSIONS) => as(...ROLE_PERMISSIONS[role]);
   assert.equal(canOpenRoute(user('slc'), '/deliberation'), true);
-  // Support teams and intervention owners open Deliberation to see what was referred or assigned to them.
-  assert.equal(canOpenRoute(user('ksh'), '/deliberation'), true);
-  assert.equal(canOpenRoute(user('faculty'), '/deliberation'), true);
-  assert.equal(canOpenRoute(user('coo'), '/deliberation'), false);
-  assert.equal(canOpenRoute(user('admin'), '/audit'), true);
+  assert.equal(canOpenRoute(user('slc'), '/imports'), true);
+  assert.equal(canOpenRoute(user('slc'), '/zones'), true);
   assert.equal(canOpenRoute(user('slc'), '/audit'), false);
+  // The COO only views: dashboards and reports, nothing that changes data.
+  assert.equal(canOpenRoute(user('coo'), '/reports'), true);
+  assert.equal(canOpenRoute(user('coo'), '/deliberation'), false);
+  assert.equal(canOpenRoute(user('coo'), '/imports'), false);
+  assert.equal(canOpenRoute(user('coo'), '/zones'), false);
+  assert.equal(canOpenRoute(user('tl'), '/zones'), true);
+  assert.equal(canOpenRoute(user('tl'), '/imports'), false);
+  assert.equal(canOpenRoute(user('admin'), '/reports'), false);
+  assert.equal(canOpenRoute(user('admin'), '/audit'), true);
+  assert.equal(canOpenRoute(user('admin'), '/imports/123'), true);
   // The most specific route decides.
   assert.equal(canOpenRoute(as('admin.reference_data'), '/admin'), true);
   assert.equal(canOpenRoute(as('admin.reference_data'), '/admin/users/5'), false);
   assert.equal(canOpenRoute(as('admin.users'), '/admin/users/5'), true);
   assert.equal(canOpenRoute(as('admin.users'), '/admin/reference'), false);
-  assert.equal(canOpenRoute(user('faculty'), '/imports'), false);
-  assert.equal(canOpenRoute(user('data_manager'), '/imports'), true);
-  assert.equal(canOpenRoute(user('data_manager'), '/imports/123'), true);
-  assert.equal(canOpenRoute(user('coo'), '/reports'), true);
-  assert.equal(canOpenRoute(user('admin'), '/reports'), false);
-  assert.equal(canOpenRoute(user('data_manager'), '/zones'), true);
-  assert.equal(canOpenRoute(user('coo'), '/zones'), true);
-  assert.equal(canOpenRoute(user('slc'), '/zones'), false);
   // The dashboard needs only a sign-in, and a similar prefix is not a match.
   assert.equal(canOpenRoute(as(), '/'), true);
   assert.equal(canOpenRoute(as(), '/reportsx'), true);

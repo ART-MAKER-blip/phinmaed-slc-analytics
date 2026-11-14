@@ -12,53 +12,45 @@ const facts = (over: Partial<Parameters<typeof concernAccess>[1]> = {}) => ({
   inScope: true, campusInScope: true, referralTeams: [] as string[], interventionOwners: [] as string[], ...over,
 });
 
-test('coordinators get full access only within their scope', () => {
+test('the SLC coordinates concerns, but only within their scope', () => {
   assert.equal(concernAccess(user('slc'), facts()), 'full');
-  assert.equal(concernAccess(user('dean'), facts()), 'full');
-  assert.equal(concernAccess(user('alc'), facts()), 'full');
-  assert.equal(concernAccess(user('dean'), facts({ inScope: false })), null);
+  assert.equal(concernAccess(user('slc'), facts({ inScope: false })), null);
 });
 
-test('support teams see only concerns referred to their own team', () => {
-  assert.equal(concernAccess(user('ksh'), facts()), null);
-  assert.equal(concernAccess(user('ksh'), facts({ referralTeams: ['SSP'] })), null);
-  assert.equal(concernAccess(user('ksh'), facts({ referralTeams: ['KSH'] })), 'team');
-  assert.equal(concernAccess(user('ssp'), facts({ referralTeams: ['SSP'], campusInScope: false })), null);
+test('the Team Learning lead, COO and administrator do not open concerns', () => {
+  assert.equal(concernAccess(user('tl'), facts()), null);
+  assert.equal(concernAccess(user('coo'), facts({ referralTeams: ['SSP', 'KSH'] })), null);
+  assert.equal(concernAccess(user('admin'), facts()), null);
 });
 
-test('intervention owners see the concern even without other access', () => {
-  assert.equal(concernAccess(user('faculty', 'f1'), facts({ interventionOwners: ['f1'] })), 'owner');
-  assert.equal(concernAccess(user('faculty', 'f1'), facts({ interventionOwners: ['f2'] })), null);
-  assert.equal(concernAccess(user('coo'), facts()), null);
+test('anyone assigned an intervention sees the concern', () => {
+  assert.equal(concernAccess(user('tl', 't1'), facts({ interventionOwners: ['t1'] })), 'owner');
+  assert.equal(concernAccess(user('tl', 't1'), facts({ interventionOwners: ['t2'] })), null);
 });
 
-test('restricted notes are visible only with permission and to the right team (test case 15)', () => {
-  assert.equal(canSeeNotes(user('slc'), 'KSH'), true);
-  assert.equal(canSeeNotes(user('ksh'), 'KSH'), true);
-  assert.equal(canSeeNotes(user('ksh'), 'SSP'), false);
-  assert.equal(canSeeNotes(user('ssp'), 'SSP'), true);
-  assert.equal(canSeeNotes(user('dean'), 'KSH'), false);
-  assert.equal(canSeeNotes(user('alc'), 'ALC'), false);
-  assert.equal(canAddNote(user('ksh'), 'KSH'), true);
-  assert.equal(canAddNote(user('dean'), 'KSH'), false);
+test('restricted notes are visible to the SLC only (test case 15)', () => {
+  for (const team of ['ALC', 'SSP', 'KSH']) {
+    assert.equal(canSeeNotes(user('slc'), team), true);
+    assert.equal(canAddNote(user('slc'), team), true);
+    for (const role of ['tl', 'coo', 'admin'] as const) {
+      assert.equal(canSeeNotes(user(role), team), false);
+      assert.equal(canAddNote(user(role), team), false);
+    }
+  }
 });
 
-test('referral visibility and updates follow access level and team', () => {
-  assert.equal(canSeeReferral(user('dean'), 'full', 'KSH'), true);
-  assert.equal(canSeeReferral(user('ssp'), 'team', 'KSH'), false);
-  assert.equal(canSeeReferral(user('ssp'), 'team', 'SSP'), true);
-  assert.equal(canSeeReferral(user('faculty'), 'owner', 'SSP'), false);
+test('no role maps to a support team, so team-level access is never granted', () => {
+  assert.deepEqual(userTeams({ roles: ['slc', 'tl', 'coo', 'admin'] }), []);
+  assert.equal(canSeeReferral(user('slc'), 'full', 'KSH'), true);
+  assert.equal(canSeeReferral(user('tl'), 'owner', 'SSP'), false);
   assert.equal(canUpdateReferral(user('slc'), 'full', 'SSP'), true);
-  assert.equal(canUpdateReferral(user('alc'), 'full', 'SSP'), false);
-  assert.equal(canUpdateReferral(user('alc'), 'full', 'ALC'), true);
-  assert.equal(canUpdateReferral(user('ssp'), 'team', 'SSP'), true);
+  assert.equal(canUpdateReferral(user('tl'), 'owner', 'SSP'), false);
 });
 
-test('interventions can be updated by managers or their owner', () => {
+test('interventions can be updated by the SLC or their owner', () => {
   assert.equal(canUpdateIntervention(user('slc'), 'full', 'someone'), true);
-  assert.equal(canUpdateIntervention(user('faculty', 'f1'), 'owner', 'f1'), true);
-  assert.equal(canUpdateIntervention(user('faculty', 'f1'), 'owner', 'f2'), false);
-  assert.equal(canUpdateIntervention(user('ssp', 's1'), 'team', 'x'), false);
+  assert.equal(canUpdateIntervention(user('tl', 't1'), 'owner', 't1'), true);
+  assert.equal(canUpdateIntervention(user('tl', 't1'), 'owner', 't2'), false);
 });
 
 test('program scope uses the student program, else the subject programs', () => {
@@ -66,7 +58,6 @@ test('program scope uses the student program, else the subject programs', () => 
   assert.equal(concernInProgramScope(['BSIT'], { studentProgram: 'BSIT', coursePrograms: [] }), true);
   assert.equal(concernInProgramScope(['BSIT'], { studentProgram: 'BSEd', coursePrograms: ['BSIT'] }), false);
   assert.equal(concernInProgramScope(['BSIT'], { studentProgram: null, coursePrograms: ['BSBA', 'BSIT'] }), true);
-  assert.deepEqual(userTeams({ roles: ['slc', 'ksh'] }), ['KSH']);
 });
 
 test('input checks trim text and reject invalid dates and choices', () => {

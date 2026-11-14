@@ -77,9 +77,23 @@ export async function POST(request: Request) {
       ['Program', 'Students', ...zoneHeaders],
       ...report.programs.map((p) => [p.program, p.total, ...countsRow(p.counts, p.total)]),
       [],
-      ['Subject sections', 'Total', ...zoneHeaders],
-      ['All shown', report.subjects.total, ...countsRow(report.subjects.counts, report.subjects.total)],
+      ['Student zones by year level'],
+      ['Year level', 'Students', ...zoneHeaders],
+      ...report.yearLevels.map((y) => [`Year ${y.yearLevel}`, y.total, ...countsRow(y.counts, y.total)]),
+      [],
+      ['Level', 'Total', ...zoneHeaders],
+      ['Subject sections', report.subjects.total, ...countsRow(report.subjects.counts, report.subjects.total)],
+      ...(report.teachers ? [['Teachers', report.teachers.total, ...countsRow(report.teachers.counts, report.teachers.total)]] : []),
     ];
+    if (report.trend.length > 0) {
+      rows.push([], ['Period trend'], ['Level', 'Period', 'Total', ...zoneHeaders]);
+      for (const key of ['students', 'subjects', 'teachers'] as const) {
+        for (const t of report.trend) {
+          const c = t[key];
+          if (c) rows.push([key === 'subjects' ? 'Subject sections' : key[0].toUpperCase() + key.slice(1), t.period, c.total, ...countsRow(c.counts, c.total)]);
+        }
+      }
+    }
     if (report.outcome) {
       const o = report.outcome;
       rows.push([], ['Outcome review since', o.previousPeriod],

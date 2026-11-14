@@ -13,8 +13,12 @@ import type { RoleId } from '@/lib/roles';
 export const REFERRAL_TEAMS = ['ALC', 'SSP', 'KSH'] as const;
 export type ReferralTeam = (typeof REFERRAL_TEAMS)[number];
 
-/** The referral team each support role works for. */
-export const ROLE_TEAMS: Partial<Record<RoleId, ReferralTeam>> = { alc: 'ALC', ssp: 'SSP', ksh: 'KSH' };
+/**
+ * The referral team each support role works for. ALC, SSP and KSH staff have no accounts in
+ * the pilot (the SLC records referrals and updates their status), so no role maps to a team.
+ * If they get accounts later, add their role here to give them team-level access.
+ */
+export const ROLE_TEAMS: Partial<Record<RoleId, ReferralTeam>> = {};
 
 export const CONCERN_STATUSES = ['open', 'in_progress', 'closed'] as const;
 export const INTERVENTION_STATUSES = ['planned', 'in_progress', 'completed', 'cancelled'] as const;

@@ -3,22 +3,23 @@ import type { BatchSummary } from '@/lib/imports/server';
 import { BatchActions } from './BatchActions';
 import { formatDateTime, ISSUE_LABEL, StatusBadge } from './shared';
 
-type Issue = { row_number: number | null; issue_type: string; message: string; resolution_status: string };
+type Issue = { row_number: number | null; severity: 'error' | 'warning'; issue_type: string; message: string; resolution_status: string };
 
 type Props = {
   batch: BatchSummary;
   issues: Issue[];
   issuesTruncated: boolean;
-  typeCounts: { issue_type: string; count: number }[];
+  typeCounts: { issue_type: string; severity: string; count: number }[];
   preview: { headers: string[]; rows: { rowNumber: number; cells: string[] }[] };
   canDecide: boolean;
 };
 
 export default function BatchPage({ batch, issues, issuesTruncated, typeCounts, preview, canDecide }: Props) {
   // Highlights rows in the preview; counts come from the database so they cover every issue.
-  const rowsWithIssues = new Set(issues.map((i) => i.row_number).filter((n): n is number => n !== null));
+  const errorRows = new Set(issues.filter((i) => i.severity === 'error').map((i) => i.row_number).filter((n): n is number => n !== null));
+  const warningRows = new Set(issues.filter((i) => i.severity === 'warning').map((i) => i.row_number).filter((n): n is number => n !== null));
   const open = batch.validation_status === 'pending' || batch.validation_status === 'needs_review';
-  const rowsWithIssueCount = batch.issue_row_count - (batch.file_issue_count > 0 ? 1 : 0);
+  const rowsWithIssueCount = batch.error_row_count;
   const validRows = Math.max((batch.total_rows ?? 0) - rowsWithIssueCount, 0);
 
   return (
@@ -30,7 +31,7 @@ export default function BatchPage({ batch, issues, issuesTruncated, typeCounts, 
             Batch IB-{String(batch.batch_id).padStart(4, '0')}
           </h1>
           <p className="mt-1.5 break-all text-sm text-ink-muted">
-            {batch.filename} · {batch.campus_code} · {batch.term_code} {batch.period_code} · uploaded {formatDateTime(batch.uploaded_at)} by {batch.uploaded_by_name}
+            {batch.filename} · {batch.campus_code} · term {batch.term_code} · uploaded {formatDateTime(batch.uploaded_at)} by {batch.uploaded_by_name}
           </p>
         </div>
         <StatusBadge status={batch.validation_status} />
@@ -40,8 +41,8 @@ export default function BatchPage({ batch, issues, issuesTruncated, typeCounts, 
         {[
           { label: 'Rows in file', value: batch.total_rows ?? 0 },
           { label: open ? 'Valid rows' : 'Imported rows', value: open ? validRows : batch.accepted_rows ?? 0 },
-          { label: open ? 'Rows with issues' : 'Skipped rows', value: open ? rowsWithIssueCount : batch.skipped_rows ?? 0 },
-          { label: 'Issues found', value: batch.issue_count },
+          { label: open ? 'Rows with errors (skipped)' : 'Skipped rows', value: open ? rowsWithIssueCount : batch.skipped_rows ?? 0 },
+          { label: 'Warnings (imported)', value: batch.warning_count },
         ].map((m) => (
           <div key={m.label} className="card p-4">
             <div className="text-xs font-semibold text-ink-muted">{m.label}</div>
@@ -73,9 +74,10 @@ export default function BatchPage({ batch, issues, issuesTruncated, typeCounts, 
           ) : (
             <>
               <ul className="mb-3 flex flex-wrap gap-1.5">
-                {typeCounts.map(({ issue_type: type, count }) => (
-                  <li key={type} className="rounded-full bg-zone-yellow-bg px-2.5 py-0.5 text-xs font-semibold text-zone-yellow-fg">
-                    {ISSUE_LABEL[type] ?? type}: {count}
+                {typeCounts.map(({ issue_type: type, severity, count }) => (
+                  <li key={`${severity}-${type}`} className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    severity === 'error' ? 'bg-zone-red-bg text-zone-red-fg' : 'bg-zone-yellow-bg text-zone-yellow-fg'}`}>
+                    {severity === 'error' ? 'Error' : 'Warning'} · {ISSUE_LABEL[type] ?? type}: {count}
                   </li>
                 ))}
               </ul>
@@ -83,7 +85,12 @@ export default function BatchPage({ batch, issues, issuesTruncated, typeCounts, 
                 {issues.map((issue, index) => (
                   <li key={index} className="flex gap-3 py-2 text-sm">
                     <span className="w-16 flex-none font-semibold">{issue.row_number === null ? 'File' : `Row ${issue.row_number}`}</span>
-                    <span><strong>{ISSUE_LABEL[issue.issue_type] ?? issue.issue_type}.</strong> {issue.message}</span>
+                    <span>
+                      <span className={`mr-1 rounded px-1.5 text-xs font-semibold ${issue.severity === 'error' ? 'bg-zone-red-bg text-zone-red-fg' : 'bg-zone-yellow-bg text-zone-yellow-fg'}`}>
+                        {issue.severity === 'error' ? 'Error' : 'Warning'}
+                      </span>
+                      <strong>{ISSUE_LABEL[issue.issue_type] ?? issue.issue_type}.</strong> {issue.message}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -94,7 +101,7 @@ export default function BatchPage({ batch, issues, issuesTruncated, typeCounts, 
 
         <article className="card p-4">
           <h2 className="text-base font-semibold">File preview</h2>
-          <p className="mb-2 mt-0.5 text-xs text-ink-muted">First {preview.rows.length} rows. Rows with issues are highlighted and will be skipped.</p>
+          <p className="mb-2 mt-0.5 text-xs text-ink-muted">First {preview.rows.length} rows. Rows with errors (red) are skipped; rows with warnings (yellow) are imported.</p>
           {preview.headers.length === 0 ? (
             <p className="text-sm text-ink-muted">The file could not be read for a preview.</p>
           ) : (
@@ -108,7 +115,7 @@ export default function BatchPage({ batch, issues, issuesTruncated, typeCounts, 
                 </thead>
                 <tbody>
                   {preview.rows.map((row) => (
-                    <tr key={row.rowNumber} className={`border-t border-surface-line ${rowsWithIssues.has(row.rowNumber) ? 'bg-zone-yellow-bg' : ''}`}>
+                    <tr key={row.rowNumber} className={`border-t border-surface-line ${errorRows.has(row.rowNumber) ? 'bg-zone-red-bg' : warningRows.has(row.rowNumber) ? 'bg-zone-yellow-bg' : ''}`}>
                       <td className="td font-semibold">{row.rowNumber}</td>
                       {preview.headers.map((_, i) => <td key={i} className="td whitespace-nowrap">{row.cells[i] ?? ''}</td>)}
                     </tr>

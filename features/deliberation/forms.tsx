@@ -238,6 +238,7 @@ export function ReferralForm({ concernId, noteTeams }: { concernId: number; note
               {Object.entries(TEAM_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </Field>
+          {team === 'SSP' && <p className="text-xs text-ink-muted sm:col-span-2">The student&apos;s SSP adviser from the SIS export is recorded as the recipient, when known.</p>}
           {noteTeams.includes(team) ? (
             <Field label="Restricted note (optional; visible only to roles allowed to see notes for this team)" wide>
               <textarea name="note" rows={2} className="field py-2" maxLength={2000} />

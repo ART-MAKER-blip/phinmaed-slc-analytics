@@ -28,7 +28,7 @@ export default async function Page({ params }: { params: { batchId: string } }) 
       issues={issues.slice(0, ISSUE_LIMIT)}
       issuesTruncated={issues.length > ISSUE_LIMIT}
       typeCounts={typeCounts}
-      preview={previewRows(file, PREVIEW_ROWS)}
+      preview={await previewRows(file, summary.filename, PREVIEW_ROWS)}
       canDecide={hasPermission(user, 'import.upload')}
     />
   );

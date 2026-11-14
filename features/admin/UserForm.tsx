@@ -8,10 +8,9 @@ type Assignment = { role: RoleId; campus: string; program: string };
 type Options = {
   campuses: { code: string; name: string }[];
   programs: { code: string; name: string }[];
-  teachers: { staff_no: string; name: string; linked: string | null }[];
 };
 type Existing = {
-  id: string; name: string; email: string; active: boolean; teacher_staff_no: string | null;
+  id: string; name: string; email: string; active: boolean;
   assignments: { role: RoleId; campus: string | null; program: string | null }[];
 };
 
@@ -47,7 +46,6 @@ export function UserForm({ options, existing }: { options: Options; existing?: E
   const [name, setName] = useState(existing?.name ?? '');
   const [email, setEmail] = useState(existing?.email ?? '');
   const [active, setActive] = useState(existing?.active ?? true);
-  const [teacher, setTeacher] = useState(existing?.teacher_staff_no ?? '');
   const [rows, setRows] = useState<Assignment[]>(
     existing?.assignments.map((a) => ({ role: a.role, campus: a.campus ?? '', program: a.program ?? '' }))
       ?? [{ role: 'slc', campus: options.campuses[0]?.code ?? '', program: '' }],
@@ -70,7 +68,7 @@ export function UserForm({ options, existing }: { options: Options; existing?: E
     setBusy(true);
     setError('');
     setSaved('');
-    const body = { name, email, active, teacherStaffNo: teacher || null, assignments: rows };
+    const body = { name, email, active, assignments: rows };
     const result = existing
       ? await post(`/api/admin/users/${existing.id}`, { action: 'update', ...body })
       : await post('/api/admin/users', body);
@@ -81,7 +79,7 @@ export function UserForm({ options, existing }: { options: Options; existing?: E
       router.refresh();
     } else {
       setPassword({ email, value: String(result.data.temporaryPassword) });
-      setName(''); setEmail(''); setTeacher('');
+      setName(''); setEmail('');
       router.refresh();
     }
   }
@@ -102,19 +100,8 @@ export function UserForm({ options, existing }: { options: Options; existing?: E
       <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-semibold">Name<input className="field mt-1" value={name} onChange={(e) => setName(e.currentTarget.value)} required minLength={2} maxLength={120} /></label>
         <label className="text-xs font-semibold">Work email<input type="email" className="field mt-1" value={email} onChange={(e) => setEmail(e.currentTarget.value)} required /></label>
-        <label className="text-xs font-semibold">
-          Linked teacher record (for faculty results)
-          <select className="field mt-1" value={teacher} onChange={(e) => setTeacher(e.currentTarget.value)}>
-            <option value="">Not linked</option>
-            {options.teachers.map((t) => (
-              <option key={t.staff_no} value={t.staff_no} disabled={Boolean(t.linked) && t.linked !== existing?.id}>
-                {t.name} ({t.staff_no}){t.linked && t.linked !== existing?.id ? ' · linked to another account' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
         {existing && (
-          <label className="flex items-center gap-2 self-end text-sm font-semibold">
+          <label className="flex items-center gap-2 text-sm font-semibold sm:col-span-2">
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.currentTarget.checked)} /> Account active
           </label>
         )}

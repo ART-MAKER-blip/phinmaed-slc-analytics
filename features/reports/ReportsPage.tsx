@@ -23,6 +23,59 @@ function CountsCells({ counts, total, bold }: { counts: ZoneCounts; total: numbe
   );
 }
 
+type Counted = { total: number; counts: ZoneCounts };
+
+/** Share of each zone per period and its change from the previous period, as in the SLC workbook. */
+function TrendTable({ trend }: { trend: ProgramReport['trend'] }) {
+  const levels: { key: 'students' | 'subjects' | 'teachers'; label: string }[] = [
+    { key: 'students', label: 'Students' }, { key: 'subjects', label: 'Subject sections' }, { key: 'teachers', label: 'Teachers' },
+  ];
+  const share = (c: Counted | undefined, z: keyof ZoneCounts) => (c && c.total ? (c.counts[z] / c.total) * 100 : 0);
+  return (
+    <article className="card">
+      <h2 className="text-base font-semibold">Period trend</h2>
+      <p className="mb-2 mt-0.5 text-sm text-ink-muted">
+        Share of each zone per period, with the change from the previous period in percentage points. More Green or less Red is an improvement.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead>
+            <tr><th className="th">Level</th><th className="th">Period</th><th className="th">Total</th>{ZONES.map((z) => <th key={z} className="th">{ZONE_LABEL[z]}</th>)}</tr>
+          </thead>
+          <tbody>
+            {levels.filter((l) => trend.some((t) => t[l.key])).map((level) => trend.map((t, i) => {
+              const now = t[level.key];
+              const before = i > 0 ? trend[i - 1][level.key] : undefined;
+              return (
+                <tr key={`${level.key}-${t.period}`} className={`border-t ${i === 0 ? 'border-surface-border' : 'border-surface-line'}`}>
+                  <td className="td font-semibold">{i === 0 ? level.label : ''}</td>
+                  <td className="td">{t.period}</td>
+                  <td className="td">{now?.total ?? 0}</td>
+                  {ZONES.map((z) => {
+                    const value = share(now, z);
+                    const delta = before ? value - share(before, z) : null;
+                    const good = delta !== null && delta !== 0 && ((z === 'green') === (delta > 0));
+                    return (
+                      <td key={z} className="td">
+                        {now?.counts[z] ?? 0} <span className="text-ink-muted">({value.toFixed(1)}%)</span>
+                        {delta !== null && Math.abs(delta) >= 0.05 && (
+                          <span className={`ml-1 text-xs font-semibold ${good ? 'text-zone-green-fg' : 'text-zone-red-fg'}`}>
+                            {delta > 0 ? '+' : '−'}{Math.abs(delta).toFixed(1)}
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            }))}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  );
+}
+
 export default function ReportsPage({ selection, programOptions, report, canExport, sample }: Props) {
   const totals = report.programs.reduce(
     (acc, p) => {
@@ -133,6 +186,29 @@ export default function ReportsPage({ selection, programOptions, report, canExpo
             </div>
           </article>
 
+          {report.yearLevels.length > 0 && (
+            <article className="card">
+              <h2 className="text-base font-semibold">Student zones by year level</h2>
+              <p className="mb-2 mt-0.5 text-sm text-ink-muted">Year level comes from the SIS SEMESTER column (Y2S2 = year 2).</p>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead><tr><th className="th">Year level</th><th className="th">Students</th>{ZONES.map((z) => <th key={z} className="th">{ZONE_LABEL[z]}</th>)}</tr></thead>
+                  <tbody>
+                    {report.yearLevels.map((y) => (
+                      <tr key={y.yearLevel} className="border-t border-surface-line">
+                        <td className="td font-semibold">Year {y.yearLevel}</td>
+                        <td className="td">{y.total}</td>
+                        <CountsCells counts={y.counts} total={y.total} />
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          )}
+
+          {report.trend.length > 0 && <TrendTable trend={report.trend} />}
+
           <section className="grid gap-4 md:grid-cols-3">
             <article className="card">
               <p className="text-sm text-ink-muted">Subject sections in the Red zone</p>
@@ -158,11 +234,21 @@ export default function ReportsPage({ selection, programOptions, report, canExpo
                 </>
               )}
             </article>
-            <article className="card">
-              <p className="text-sm text-ink-muted">Targets</p>
-              <p className="mt-1 text-base font-semibold">Set after PHINMA confirms them</p>
-              <p className="text-sm text-ink-muted">Progress toward Green (P1, P2) and passing the Common Final Examination (P3).</p>
-            </article>
+            {report.teachers ? (
+              <article className="card">
+                <p className="text-sm text-ink-muted">Teachers in the Red zone</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight">{report.teachers.counts.red}</p>
+                <p className="text-sm text-ink-muted">
+                  of {report.teachers.total} · {report.teachers.counts.yellow} Yellow · {report.teachers.counts.green} Green
+                </p>
+              </article>
+            ) : (
+              <article className="card">
+                <p className="text-sm text-ink-muted">Targets</p>
+                <p className="mt-1 text-base font-semibold">Set after PHINMA confirms them</p>
+                <p className="text-sm text-ink-muted">Progress toward Green (P1, P2) and passing the Common Final Examination (P3).</p>
+              </article>
+            )}
           </section>
         </>
       )}

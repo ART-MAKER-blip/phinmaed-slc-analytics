@@ -14,7 +14,7 @@ export default async function Page({ searchParams }: { searchParams: Record<stri
   const type = first(searchParams.type) === 'semester' ? 'semester' : 'periodic';
 
   if (!process.env.DATABASE_URL || user.isDemo) {
-    const empty: ProgramReport = { run: null, type, programFilter: 'all', programs: [], subjects: { total: 0, counts: { green: 0, yellow: 0, red: 0 } }, outcome: null };
+    const empty: ProgramReport = { run: null, type, programFilter: 'all', programs: [], yearLevels: [], subjects: { total: 0, counts: { green: 0, yellow: 0, red: 0 } }, outcome: null, trend: [] };
     const selection = { campus: null, term: null, period: 'P1', programs: 'all' as const, campuses: [], terms: [], periods: [] };
     return <ReportsPage selection={selection} programOptions={[]} report={empty} canExport={false} sample />;
   }

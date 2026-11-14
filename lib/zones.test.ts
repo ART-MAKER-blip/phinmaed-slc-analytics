@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  classify, DEFAULT_RULES, failureRate, studentZone, subjectZone, summarize, validateThresholds,
+  classify, DEFAULT_PERIOD_RULES, DEFAULT_RULES, failureRate, periodOutcome, studentZone, subjectZone, summarize, validateThresholds,
   type RuleSet, type Zone, type ZoneLevel, type ZoneThreshold,
 } from './zones';
 
@@ -67,7 +67,8 @@ test('stored rule sets classify subjects at the documented boundaries (test case
 });
 
 test('the seeded thresholds are a valid rule set', () => {
-  assert.deepEqual(validateThresholds(STORED), []);
+  const seeded: ZoneThreshold[] = [...STORED, ...STORED.filter((t) => t.level === 'subject').map((t) => ({ ...t, level: 'teacher' as const }))];
+  assert.deepEqual(validateThresholds(seeded), []);
 });
 
 test('incomplete or gapped rule sets are rejected', () => {
@@ -77,4 +78,40 @@ test('incomplete or gapped rule sets are rejected', () => {
   assert.match(validateThresholds(gap).join(), /must start right after green/);
   const fractional = STORED.map((t) => (t.level === 'student' && t.zone === 'yellow' ? { ...t, min: 1, max: 1.5 } : t));
   assert.ok(validateThresholds(fractional).length > 0);
+});
+
+test('period outcome: score below the passing mark is failed, NA is not counted (failed-subject definition)', () => {
+  const r = DEFAULT_PERIOD_RULES;
+  assert.equal(periodOutcome('59.99', r), 'failed');
+  assert.equal(periodOutcome('60', r), 'passed');
+  assert.equal(periodOutcome('0', r), 'failed');
+  assert.equal(periodOutcome('INC', r), 'failed');
+  assert.equal(periodOutcome('abs', r), 'failed');
+  assert.equal(periodOutcome('NA', r), 'not_counted');
+  assert.equal(periodOutcome('', r), 'not_counted');
+  assert.equal(periodOutcome('COMPLETE', r), 'not_counted');
+  assert.equal(periodOutcome('70', { ...r, passingMark: 75 }), 'failed');
+});
+
+test('period outcome: an empty P3 is not counted, unless the final remark is failing', () => {
+  const r = DEFAULT_PERIOD_RULES;
+  assert.equal(periodOutcome(null, r, { period: 'P3', remarks: 'Passed' }), 'not_counted');
+  assert.equal(periodOutcome('', r, { period: 'P3' }), 'not_counted');
+  assert.equal(periodOutcome('NA', r, { period: 'P3', remarks: 'FAILED' }), 'failed');
+  assert.equal(periodOutcome('85', r, { period: 'P3', remarks: 'NO CREDIT' }), 'failed');
+  // Final remarks only matter for P3.
+  assert.equal(periodOutcome('85', r, { period: 'P2', remarks: 'FAILED' }), 'passed');
+  assert.equal(periodOutcome('NA', r, { period: 'P2', remarks: 'FAILED' }), 'not_counted');
+});
+
+test('teacher zones use failure-rate thresholds like subjects', () => {
+  const withTeacher: ZoneThreshold[] = [
+    ...STORED,
+    { level: 'teacher', zone: 'green', min: 0, max: 10 },
+    { level: 'teacher', zone: 'yellow', min: 10.01, max: 40 },
+    { level: 'teacher', zone: 'red', min: 40.01, max: 100 },
+  ];
+  assert.deepEqual(validateThresholds(withTeacher), []);
+  assert.deepEqual([5, 25, 50].map((r) => classify(withTeacher, 'teacher', r)), ['green', 'yellow', 'red']);
+  assert.match(validateThresholds(STORED).join(), /teacher level needs/);
 });

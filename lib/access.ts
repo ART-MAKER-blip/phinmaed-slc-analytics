@@ -22,7 +22,7 @@ export function hasPermission(user: Pick<AccessUser, 'permissions'>, permission:
 /** Pages and the permissions that open them (any one is enough). Unlisted pages need only a sign-in. */
 export const ROUTE_PERMISSIONS: Record<string, readonly Permission[]> = {
   '/imports': ['import.view'],
-  '/deliberation': ['deliberation.record', 'concern.manage', 'referral.view', 'intervention.own'],
+  '/deliberation': ['deliberation.record', 'concern.manage', 'referral.view'],
   '/period-cycle': ['concern.manage'],
   '/reports': ['report.view'],
   '/zones': ['zones.calculate', 'rules.approve', 'rules.configure'],

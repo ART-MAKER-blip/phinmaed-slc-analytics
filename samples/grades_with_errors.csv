@@ -1,7 +1,0 @@
-student_id,last_name,first_name,program,year_level,course_code,course_title,section,result_status,grade,teacher_id,teacher_name
-2026-0001,"Castillo",Mark,BSEd,2,ED 101,The Teaching Profession,A,Passed,84,T-301,"Torres, Mark"
-2026-0001,"Castillo",Mark,BSEd,2,ED 101,The Teaching Profession,A,Passed,84,T-301,"Torres, Mark"
-2026-0099,Lopez,Ivy,BSXX,1,IT 101,Introduction to Computing,A,Passed,80,T-101,"Santos, Maria"
-,Cruz,Al,BSIT,1,IT 101,Introduction to Computing,A,Passed,80,T-101,"Santos, Maria"
-2026-0098,Uy,Dan,BSIT,7,IT 101,Introduction to Computing,A,Excellent,99,T-101,"Santos, Maria"
-2026-0002,"Bautista",Maria,BSBA,3,GE 101,Mathematics in the Modern World,A,Passed,95,T-201,"Reyes, Ana"

@@ -4,12 +4,9 @@ import { requireApiPermission } from '@/lib/authorize';
 import { getCurrentUser, type AuthUser } from '@/lib/auth';
 import type { Permission } from '@/lib/permissions';
 
-/** An error whose message is safe to show the user, with the HTTP status to send. */
-export class ApiError extends Error {
-  constructor(message: string, public status = 400) {
-    super(message);
-  }
-}
+import { ApiError } from '@/lib/errors';
+
+export { ApiError };
 
 /**
  * Runs an API handler for a database account with the given permission. ApiErrors become

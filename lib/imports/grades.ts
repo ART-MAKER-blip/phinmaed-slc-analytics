@@ -1,209 +1,262 @@
 /**
- * Validation for SIS grade files. Pure functions: everything the checks need from the
- * database is passed in as lookups, so the same code runs at upload and again at accept.
+ * Validation for the SIS "Grade Deliberation Report" export: one row per student per
+ * subject, with P1, P2 and P3 period scores. Pure functions: everything the checks need
+ * from the database is passed in as lookups, so the same code runs at upload and at accept.
  *
- * The column list is the working assumption until the SIS export format is confirmed
- * with PHINMA (proposal, Requirements Gathering).
+ * Known quirks of the real export, handled here:
+ * - STUDENT ID starts with an apostrophe ('2024-12345) so Excel keeps it as text.
+ * - NAME and TEACHER have trailing spaces; "-" means none in SSP SECTION and SSP ADVISER.
+ * - YEAR LEVEL is unreliable (often "YEAR 1" for everyone, sometimes empty), so the year
+ *   level comes from SEMESTER (Y2S2 = year 2, semester 2).
+ * - A few rows list a different COLLEGE than the program's; they are imported with a warning.
  */
 import { parseCsv } from './csv';
 
-export const REQUIRED_COLUMNS = [
-  'student_id', 'last_name', 'first_name', 'program', 'year_level',
-  'course_code', 'course_title', 'section', 'result_status',
+export const SIS_COLUMNS = [
+  'SESSION', 'COLLEGE', 'COURSE', 'STUDENT ID', 'NAME', 'SEMESTER', 'YEAR LEVEL', 'CODE', 'SUBJECT NAME',
+  'SUBJECT TYPE', 'UNITS', 'SECTION', 'TEACHER', 'SSP SECTION', 'SSP ADVISER', 'MODALITY', 'ENLISTMENT MODE',
+  'ADMISSION TYPE', 'GENDER', 'P3', 'P1', 'P2', 'GRADE', 'REMARKS',
 ] as const;
-export const OPTIONAL_COLUMNS = ['grade', 'teacher_id', 'teacher_name', 'attempt', 'term', 'period'] as const;
-export const TEMPLATE_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS] as const;
+
+export const REQUIRED_COLUMNS = [
+  'SESSION', 'COURSE', 'STUDENT ID', 'NAME', 'SEMESTER', 'CODE', 'SUBJECT NAME', 'SECTION', 'P1', 'P2', 'P3', 'REMARKS',
+] as const;
 
 export const MAX_ROWS = 50_000;
+
+/** Period values the export uses besides numbers. Rule sets decide how each one counts. */
+export const PERIOD_TEXT_VALUES = ['NA', 'INC', 'ABS'];
+const FINAL_GRADE_TEXT = ['NC', 'INC', 'FA', 'DP', 'COMPLETE', 'INCOMPLETE'];
 
 export type IssueType =
   | 'missing_column' | 'missing_value' | 'duplicate_record'
   | 'unmatched_identifier' | 'term_mapping' | 'program_mapping' | 'invalid_value';
 
-/** rowNumber is the line in the file (header = 1); null for file-level issues. */
-export type ImportIssue = { rowNumber: number | null; type: IssueType; message: string };
+/** rowNumber is the line in the file (header = 1); null for file-level issues. Errors skip the row. */
+export type ImportIssue = { rowNumber: number | null; type: IssueType; severity: 'error' | 'warning'; message: string };
 
-export type GradeRow = {
+export type SisRow = {
   rowNumber: number;
   studentId: string;
-  lastName: string;
-  firstName: string;
+  fullName: string;
+  gender: string | null;
+  admissionType: string | null;
   program: string;
   yearLevel: number;
   courseCode: string;
   courseTitle: string;
+  subjectType: string | null;
+  units: number | null;
   section: string;
-  grade: string | null;
-  resultStatus: string;
-  teacherId: string | null;
+  teacherKey: string | null;
   teacherName: string | null;
-  attempt: number;
+  sspSection: string | null;
+  sspAdviser: string | null;
+  modality: string | null;
+  enlistmentMode: string | null;
+  p1: string | null;
+  p2: string | null;
+  p3: string | null;
+  finalGrade: string | null;
+  remarks: string | null;
 };
 
-export type GradeLookups = {
+export type SisLookups = {
+  /** Selected term, e.g. 2025-2. */
   termCode: string;
-  periodCode: string;
-  /** Lower-cased program code -> program code, for programs offered at the batch's campus. */
-  programs: Map<string, string>;
-  /** Result status codes in the database (upper case). */
-  resultStatuses: Set<string>;
-  /** Existing students by SIS id. */
-  students: Map<string, { lastName: string; firstName: string }>;
-  /** Existing teachers by staff number. */
-  teachers: Map<string, string>;
-  /** Existing enrollments for the term's academic year: SIS id -> program code. */
-  enrollments: Map<string, string>;
+  /** Selected campus code, e.g. COC. Section codes start with it. */
+  campusCode: string;
+  /** Programs offered at the campus, by lower-cased name and code -> { code, college name }. */
+  programs: Map<string, { code: string; college: string }>;
+  /** REMARKS values by upper case -> stored code (Passed, FAILED, NO CREDIT, INCOMPLETE). */
+  remarks: Map<string, string>;
+  /** Text period values accepted in P1-P3 (upper case). */
+  periodTexts: Set<string>;
+  /** Existing students by SIS ID -> full name. */
+  students: Map<string, string>;
+  /** Program code each student already has in this term. */
+  studentPrograms: Map<string, string>;
 };
 
-export type GradeValidation = {
-  rows: GradeRow[];
-  issues: ImportIssue[];
-  /** Total data rows in the file (excluding the header). */
-  totalRows: number;
-  /** True when the file cannot be imported at all (for example, missing columns). */
-  fileRejected: boolean;
-};
+export type SisValidation = { rows: SisRow[]; issues: ImportIssue[]; totalRows: number; fileRejected: boolean };
 
-const RESULT_ALIASES: Record<string, string> = {
-  PASS: 'PASSED', P: 'PASSED',
-  FAIL: 'FAILED', F: 'FAILED',
-  INCOMPLETE: 'INC',
-  DROP: 'DROPPED', DRP: 'DROPPED',
-  W: 'WITHDRAWN', WD: 'WITHDRAWN',
-  NG: 'NO_GRADE', 'NO GRADE': 'NO_GRADE',
-};
+const normalizeHeader = (h: string) => h.replace(/\s+/g, ' ').trim().toUpperCase();
+const clean = (v: string | undefined) => (v ?? '').replace(/\s+/g, ' ').trim();
+const noneIfDash = (v: string) => (v === '' || v === '-' ? null : v);
+export const nameKey = (v: string) => clean(v).toUpperCase();
 
-const normalizeHeader = (h: string) => h.trim().toLowerCase().replace(/[\s-]+/g, '_');
-const clean = (v: string | undefined) => (v ?? '').trim();
-const code = (v: string) => v.trim().replace(/\s+/g, ' ').toUpperCase();
-const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-
-export function normalizeResultStatus(value: string, known: Set<string>): string | null {
-  const upper = value.trim().toUpperCase();
-  if (known.has(upper)) return upper;
-  const alias = RESULT_ALIASES[upper];
-  return alias && known.has(alias) ? alias : null;
+/** "SY 25-26 SEM II" -> "2025-2". Also accepts "SY 2025-2026 SEM 2" and "SUMMER". */
+export function parseSession(value: string): string | null {
+  const m = /^SY\s*(\d{2}|\d{4})\s*-\s*(\d{2}|\d{4})\s+(?:SEM(?:ESTER)?\s*)?(I{1,3}|[123]|SUMMER)$/i.exec(clean(value));
+  if (!m) return null;
+  const start = m[1].length === 2 ? 2000 + Number(m[1]) : Number(m[1]);
+  const end = m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]);
+  if (end !== start + 1) return null;
+  const sem = { I: 1, II: 2, III: 3, '1': 1, '2': 2, '3': 3, SUMMER: 3 }[m[3].toUpperCase() as 'I'];
+  return sem ? `${start}-${sem}` : null;
 }
 
-/** Checks that need only the file itself: columns, values, and duplicates within the file. */
-export function validateGradeFile(text: string, lookups: GradeLookups): GradeValidation {
-  let table: string[][];
-  try {
-    table = parseCsv(text);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'The file could not be read as CSV.';
-    return { rows: [], issues: [{ rowNumber: null, type: 'invalid_value', message }], totalRows: 0, fileRejected: true };
-  }
+/** "Y2S2" -> { year: 2, semester: 2 }. */
+export function parseSemester(value: string) {
+  const m = /^Y([1-5])\s*S([1-3])$/i.exec(clean(value));
+  return m ? { year: Number(m[1]), semester: Number(m[2]) } : null;
+}
 
+/** Student IDs lose the apostrophe Excel needs to keep them as text. */
+export function cleanStudentId(value: string) {
+  return clean(value).replace(/^'+/, '').trim();
+}
+
+function periodValue(raw: string, label: string, periodTexts: Set<string>, add: (message: string) => void): string | null {
+  const v = clean(raw).toUpperCase();
+  if (v === '' || v === '-') return null;
+  if (periodTexts.has(v)) return v;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100) {
+    add(`${label} "${clean(raw)}" must be a score from 0 to 100 or one of ${[...periodTexts].join(', ')}.`);
+    return null;
+  }
+  return String(Math.round(n * 100) / 100);
+}
+
+export function validateSisTable(table: string[][], lookups: SisLookups): SisValidation {
   if (table.length === 0) {
-    return { rows: [], issues: [{ rowNumber: null, type: 'missing_value', message: 'The file is empty.' }], totalRows: 0, fileRejected: true };
+    return { rows: [], issues: [{ rowNumber: null, type: 'missing_value', severity: 'error', message: 'The file is empty.' }], totalRows: 0, fileRejected: true };
   }
-
-  const headers = table[0].map(normalizeHeader);
+  const headers = table[0].map((h) => normalizeHeader(String(h ?? '')));
   const dataRows = table.slice(1);
   const issues: ImportIssue[] = [];
+  const fileError = (type: IssueType, message: string) => issues.push({ rowNumber: null, type, severity: 'error', message });
 
-  const missing = REQUIRED_COLUMNS.filter((c) => !headers.includes(c));
-  for (const column of missing) {
-    issues.push({ rowNumber: null, type: 'missing_column', message: `Required column "${column}" is missing.` });
+  for (const column of REQUIRED_COLUMNS) if (!headers.includes(column)) fileError('missing_column', `Required column "${column}" is missing.`);
+  for (const column of new Set(headers.filter((h, i) => h !== '' && headers.indexOf(h) !== i))) {
+    fileError('invalid_value', `Column "${column}" appears more than once.`);
   }
-  const duplicateHeaders = headers.filter((h, i) => h !== '' && headers.indexOf(h) !== i);
-  for (const column of new Set(duplicateHeaders)) {
-    issues.push({ rowNumber: null, type: 'invalid_value', message: `Column "${column}" appears more than once.` });
-  }
-  if (dataRows.length === 0) {
-    issues.push({ rowNumber: null, type: 'missing_value', message: 'The file has a header but no data rows.' });
-  }
-  if (dataRows.length > MAX_ROWS) {
-    issues.push({ rowNumber: null, type: 'invalid_value', message: `The file has ${dataRows.length} rows; the limit is ${MAX_ROWS}. Split it by program.` });
-  }
+  if (dataRows.length === 0) fileError('missing_value', 'The file has a header but no data rows.');
+  if (dataRows.length > MAX_ROWS) fileError('invalid_value', `The file has ${dataRows.length} rows; the limit is ${MAX_ROWS}. Split it by year level.`);
   if (issues.length > 0) return { rows: [], issues, totalRows: dataRows.length, fileRejected: true };
 
-  const col = (name: string) => headers.indexOf(name);
-  const get = (cells: string[], name: string) => (col(name) === -1 ? '' : clean(cells[col(name)]));
+  const index = new Map(headers.map((h, i) => [h, i]));
+  const get = (cells: string[], name: string) => {
+    const i = index.get(name);
+    return i === undefined ? '' : clean(String(cells[i] ?? ''));
+  };
+  const termSemester = Number(lookups.termCode.split('-')[1]);
 
-  const rows: GradeRow[] = [];
+  const rows: SisRow[] = [];
   const firstSeen = new Map<string, number>();
-  const studentInFile = new Map<string, { rowNumber: number; program: string; yearLevel: number; lastName: string }>();
+  const studentInFile = new Map<string, { rowNumber: number; program: string; yearLevel: number; name: string }>();
 
-  dataRows.forEach((cells, index) => {
-    const rowNumber = index + 2;
+  dataRows.forEach((cells, i) => {
+    const rowNumber = i + 2;
     const rowIssues: ImportIssue[] = [];
-    const add = (type: IssueType, message: string) => rowIssues.push({ rowNumber, type, message });
+    const error = (type: IssueType, message: string) => rowIssues.push({ rowNumber, type, severity: 'error', message });
+    const warn = (type: IssueType, message: string) => rowIssues.push({ rowNumber, type, severity: 'warning', message });
 
-    for (const column of REQUIRED_COLUMNS) {
-      if (get(cells, column) === '') add('missing_value', `"${column}" is empty.`);
+    // Period scores and remarks may be empty early in a term; SEMESTER can fall back to YEAR LEVEL.
+    for (const column of REQUIRED_COLUMNS.filter((c) => !['P1', 'P2', 'P3', 'REMARKS', 'SEMESTER'].includes(c))) {
+      if (get(cells, column) === '') error('missing_value', `${column} is empty.`);
     }
 
-    const studentId = get(cells, 'student_id');
-    const lastName = get(cells, 'last_name');
-    const firstName = get(cells, 'first_name');
-    const programRaw = get(cells, 'program');
-    const courseCode = code(get(cells, 'course_code'));
-    const section = code(get(cells, 'section'));
-    const teacherId = get(cells, 'teacher_id') || null;
-    const teacherName = get(cells, 'teacher_name') || null;
+    const session = get(cells, 'SESSION');
+    const sessionTerm = session ? parseSession(session) : null;
+    if (session && !sessionTerm) error('term_mapping', `SESSION "${session}" is not in the form "SY 25-26 SEM II".`);
+    else if (sessionTerm && sessionTerm !== lookups.termCode) error('term_mapping', `SESSION "${session}" is term ${sessionTerm}, not the selected term ${lookups.termCode}.`);
 
-    const program = lookups.programs.get(programRaw.toLowerCase());
-    if (programRaw && !program) add('program_mapping', `Program "${programRaw}" is not mapped to a program at this campus.`);
+    const studentId = cleanStudentId(get(cells, 'STUDENT ID'));
+    if (studentId && !/^[A-Za-z0-9-]{4,20}$/.test(studentId)) error('invalid_value', `STUDENT ID "${studentId}" is not a valid ID.`);
+    const fullName = get(cells, 'NAME');
 
-    const yearLevelRaw = get(cells, 'year_level');
-    const yearLevel = Number(yearLevelRaw);
-    if (yearLevelRaw && !(Number.isInteger(yearLevel) && yearLevel >= 1 && yearLevel <= 4)) {
-      add('invalid_value', `Year level "${yearLevelRaw}" must be 1 to 4.`);
+    const courseValue = get(cells, 'COURSE');
+    const program = courseValue ? lookups.programs.get(courseValue.toLowerCase()) : undefined;
+    if (courseValue && !program) error('program_mapping', `COURSE "${courseValue}" is not a program offered at ${lookups.campusCode}.`);
+    const college = get(cells, 'COLLEGE');
+    if (program && college && college.toLowerCase() !== program.college.toLowerCase()) {
+      warn('program_mapping', `COLLEGE "${college}" differs from ${program.code}'s college (${program.college}); imported under ${program.code} from COURSE.`);
     }
 
-    const attemptRaw = get(cells, 'attempt');
-    const attempt = attemptRaw === '' ? 1 : Number(attemptRaw);
-    if (!(Number.isInteger(attempt) && attempt >= 1 && attempt <= 9)) add('invalid_value', `Attempt "${attemptRaw}" must be a whole number from 1 to 9.`);
-
-    const statusRaw = get(cells, 'result_status');
-    const resultStatus = statusRaw ? normalizeResultStatus(statusRaw, lookups.resultStatuses) : null;
-    if (statusRaw && !resultStatus) add('invalid_value', `Result status "${statusRaw}" is not recognized.`);
-
-    const term = get(cells, 'term');
-    if (term && term !== lookups.termCode) add('term_mapping', `Term "${term}" does not match the selected term ${lookups.termCode}.`);
-    const period = get(cells, 'period');
-    if (period && period.toUpperCase() !== lookups.periodCode) add('term_mapping', `Period "${period}" does not match the selected period ${lookups.periodCode}.`);
-
-    if (teacherId && !teacherName) add('missing_value', '"teacher_name" is required when "teacher_id" is given.');
-
-    // Identifier checks against existing records: a mismatch usually means a mistyped id.
-    const knownStudent = studentId ? lookups.students.get(studentId) : undefined;
-    if (knownStudent && lastName && !sameName(knownStudent.lastName, lastName)) {
-      add('unmatched_identifier', `Student ${studentId} is on record as ${knownStudent.lastName}, but the file says ${lastName}.`);
+    const semester = get(cells, 'SEMESTER');
+    const parsed = semester ? parseSemester(semester) : null;
+    let yearLevel = parsed?.year ?? 0;
+    if (semester && !parsed) error('invalid_value', `SEMESTER "${semester}" is not in the form Y1S2.`);
+    if (parsed && parsed.semester !== termSemester) {
+      error('term_mapping', `SEMESTER "${semester}" is semester ${parsed.semester}, but term ${lookups.termCode} is semester ${termSemester}.`);
     }
-    const enrolledProgram = studentId ? lookups.enrollments.get(studentId) : undefined;
-    if (enrolledProgram && program && enrolledProgram !== program) {
-      add('unmatched_identifier', `Student ${studentId} is enrolled in ${enrolledProgram} this academic year, but the file says ${program}.`);
-    }
-    const knownTeacher = teacherId ? lookups.teachers.get(teacherId) : undefined;
-    if (knownTeacher && teacherName && !sameName(knownTeacher, teacherName)) {
-      add('unmatched_identifier', `Teacher ${teacherId} is on record as ${knownTeacher}, but the file says ${teacherName}.`);
-    }
-
-    // Consistency within the file: one student, one program, year level and name.
-    if (studentId && program) {
-      const seen = studentInFile.get(studentId);
-      if (!seen) studentInFile.set(studentId, { rowNumber, program, yearLevel, lastName });
-      else if (seen.program !== program || seen.yearLevel !== yearLevel || !sameName(seen.lastName, lastName)) {
-        add('invalid_value', `Student ${studentId} has a different program, year level or name than on row ${seen.rowNumber}.`);
+    if (!parsed) {
+      const fallback = /^YEAR\s*([1-5])$/i.exec(get(cells, 'YEAR LEVEL'));
+      if (fallback) {
+        yearLevel = Number(fallback[1]);
+        warn('missing_value', `Year level taken from YEAR LEVEL (${yearLevel}) because SEMESTER is missing or invalid.`);
+      } else if (!semester) {
+        error('missing_value', 'SEMESTER and YEAR LEVEL are both empty, so the year level is unknown.');
       }
     }
 
-    if (studentId && courseCode && section) {
-      const key = `${studentId}|${courseCode}|${section}|${attempt}`;
+    const section = get(cells, 'SECTION').toUpperCase();
+    const prefix = /^([A-Z]+)-/.exec(section)?.[1];
+    if (prefix && prefix !== lookups.campusCode.toUpperCase()) error('program_mapping', `SECTION "${section}" belongs to campus ${prefix}, not ${lookups.campusCode}.`);
+
+    const unitsRaw = get(cells, 'UNITS');
+    const units = unitsRaw === '' ? null : Number(unitsRaw);
+    if (units !== null && !(Number.isFinite(units) && units >= 0 && units <= 30)) error('invalid_value', `UNITS "${unitsRaw}" is not a number of units.`);
+
+    const p = (name: 'P1' | 'P2' | 'P3') => periodValue(get(cells, name), name, lookups.periodTexts, (m) => error('invalid_value', m));
+    const p1 = p('P1');
+    const p2 = p('P2');
+    const p3 = p('P3');
+
+    const grade = noneIfDash(get(cells, 'GRADE').toUpperCase());
+    if (grade && !FINAL_GRADE_TEXT.includes(grade) && !(Number.isFinite(Number(grade)) && Number(grade) >= 1 && Number(grade) <= 5)) {
+      error('invalid_value', `GRADE "${grade}" is not 1.0-5.0 or one of ${FINAL_GRADE_TEXT.join(', ')}.`);
+    }
+    const remarksRaw = noneIfDash(get(cells, 'REMARKS'));
+    const remarks = remarksRaw ? lookups.remarks.get(remarksRaw.toUpperCase()) ?? null : null;
+    if (remarksRaw && !remarks) error('invalid_value', `REMARKS "${remarksRaw}" is not one of ${[...lookups.remarks.values()].join(', ')}.`);
+
+    if (studentId && fullName) {
+      const known = lookups.students.get(studentId);
+      if (known && nameKey(known) !== nameKey(fullName)) {
+        error('unmatched_identifier', `Student ${studentId} is on record as ${known}, but the file says ${fullName}.`);
+      }
+      const knownProgram = lookups.studentPrograms.get(studentId);
+      if (knownProgram && program && knownProgram !== program.code) {
+        error('unmatched_identifier', `Student ${studentId} is already in ${knownProgram} this term, but the file says ${program.code}.`);
+      }
+      if (program && yearLevel) {
+        const seen = studentInFile.get(studentId);
+        if (!seen) studentInFile.set(studentId, { rowNumber, program: program.code, yearLevel, name: nameKey(fullName) });
+        else if (seen.program !== program.code || seen.yearLevel !== yearLevel || seen.name !== nameKey(fullName)) {
+          error('invalid_value', `Student ${studentId} has a different name, program or year level than on row ${seen.rowNumber}.`);
+        }
+      }
+    }
+
+    const courseCode = get(cells, 'CODE').toUpperCase();
+    if (studentId && courseCode) {
+      const key = `${studentId}|${courseCode}`;
       const first = firstSeen.get(key);
-      if (first) add('duplicate_record', `Repeats row ${first}: same student, course, section and attempt.`);
+      if (first) error('duplicate_record', `Repeats row ${first}: same student and subject.`);
       else firstSeen.set(key, rowNumber);
     }
 
     issues.push(...rowIssues);
-    if (rowIssues.length === 0 && program && resultStatus) {
+    if (!rowIssues.some((x) => x.severity === 'error') && program && yearLevel) {
+      const teacher = noneIfDash(get(cells, 'TEACHER'));
       rows.push({
-        rowNumber, studentId, lastName, firstName, program, yearLevel, courseCode,
-        courseTitle: get(cells, 'course_title'), section,
-        grade: get(cells, 'grade') || null, resultStatus, teacherId, teacherName, attempt,
+        rowNumber, studentId, fullName,
+        gender: noneIfDash(get(cells, 'GENDER')),
+        admissionType: noneIfDash(get(cells, 'ADMISSION TYPE')),
+        program: program.code, yearLevel, courseCode,
+        courseTitle: get(cells, 'SUBJECT NAME'),
+        subjectType: noneIfDash(get(cells, 'SUBJECT TYPE')),
+        units, section,
+        teacherKey: teacher ? nameKey(teacher) : null,
+        teacherName: teacher,
+        sspSection: noneIfDash(get(cells, 'SSP SECTION')),
+        sspAdviser: noneIfDash(get(cells, 'SSP ADVISER')),
+        modality: noneIfDash(get(cells, 'MODALITY')),
+        enlistmentMode: noneIfDash(get(cells, 'ENLISTMENT MODE')),
+        p1, p2, p3, finalGrade: grade, remarks,
       });
     }
   });
@@ -211,21 +264,15 @@ export function validateGradeFile(text: string, lookups: GradeLookups): GradeVal
   return { rows, issues, totalRows: dataRows.length, fileRejected: false };
 }
 
-/** The ids in a file, so the server can load only the lookups it needs. */
-export function collectIdentifiers(text: string) {
-  const students = new Set<string>();
-  const teachers = new Set<string>();
-  try {
-    const table = parseCsv(text);
-    const headers = (table[0] ?? []).map(normalizeHeader);
-    const s = headers.indexOf('student_id');
-    const t = headers.indexOf('teacher_id');
-    for (const cells of table.slice(1, MAX_ROWS + 1)) {
-      if (s !== -1 && clean(cells[s])) students.add(clean(cells[s]));
-      if (t !== -1 && clean(cells[t])) teachers.add(clean(cells[t]));
-    }
-  } catch {
-    // validateGradeFile reports unreadable files.
-  }
-  return { students: [...students], teachers: [...teachers] };
+/** Student IDs in a table, so the server loads only the lookups it needs. */
+export function collectStudentIds(table: string[][]) {
+  const headers = (table[0] ?? []).map((h) => normalizeHeader(String(h ?? '')));
+  const col = headers.indexOf('STUDENT ID');
+  if (col === -1) return [];
+  return [...new Set(table.slice(1, MAX_ROWS + 1).map((r) => cleanStudentId(String(r[col] ?? ''))).filter(Boolean))];
+}
+
+/** CSV text to a table of strings. */
+export function tableFromCsv(text: string): string[][] {
+  return parseCsv(text);
 }

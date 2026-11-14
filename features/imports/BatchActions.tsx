@@ -12,7 +12,7 @@ export function BatchActions({ batchId, canAccept, validRows, skippedRows }: Pro
 
   async function decide(action: 'accept' | 'reject') {
     const prompt = action === 'accept'
-      ? `Import ${validRows} valid rows${skippedRows ? ` and skip ${skippedRows} rows with issues` : ''}?`
+      ? `Import ${validRows} valid rows${skippedRows ? ` and skip ${skippedRows} rows with errors` : ''}?`
       : 'Reject this batch? Nothing from it will be imported.';
     if (!window.confirm(prompt)) return;
 
@@ -38,7 +38,7 @@ export function BatchActions({ batchId, canAccept, validRows, skippedRows }: Pro
     <section className="card flex flex-wrap items-center justify-between gap-3 p-4" aria-label="Decision">
       <p className="text-sm">
         {canAccept
-          ? <>Accepting imports <strong>{validRows}</strong> rows{skippedRows > 0 && <> and skips <strong>{skippedRows}</strong> rows with issues. Fix those rows in the source file and upload it again to import them later</>}.</>
+          ? <>Accepting imports <strong>{validRows}</strong> rows{skippedRows > 0 && <> and skips <strong>{skippedRows}</strong> rows with errors. Fix those rows in the SIS export and upload it again to import them later</>}.</>
           : 'This file cannot be imported. Fix the issues listed below and upload it again, or reject this batch.'}
       </p>
       <div className="flex flex-wrap gap-2">

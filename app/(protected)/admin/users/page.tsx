@@ -27,7 +27,7 @@ export default async function Page() {
         <h2 id="users-heading" className="mb-3 text-base font-semibold">Accounts ({users.length})</h2>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
-            <thead><tr><th className="th">Name</th><th className="th">Roles and scope</th><th className="th">Teacher</th><th className="th">Last sign-in</th><th className="th">Status</th></tr></thead>
+            <thead><tr><th className="th">Name</th><th className="th">Roles and scope</th><th className="th">Last sign-in</th><th className="th">Status</th></tr></thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id} className="border-t border-surface-line align-top">
@@ -37,7 +37,6 @@ export default async function Page() {
                       <div key={i}>{getRoleLabel(a.role)} <span className="text-xs text-ink-muted">· {a.campus ?? 'all campuses'}{a.campus ? ` · ${a.program ?? 'all programs'}` : ''}</span></div>
                     ))}
                   </td>
-                  <td className="td">{u.teacher ?? '—'}</td>
                   <td className="td">{u.last_login ? formatDateTime(u.last_login) : 'Never'}</td>
                   <td className="td">{u.active ? 'Active' : <span className="text-ink-muted">Deactivated</span>}</td>
                 </tr>
