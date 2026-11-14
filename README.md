@@ -51,6 +51,39 @@ npm run dev        # http://localhost:3000
 
 Sign in with `slc.demo@example.test`, `tl.demo@example.test`, `coo.demo@example.test` or `admin.demo@example.test` and the password printed in step 3. The shared password `SLCdemo-2026!` opens a sample-data demo that does not use the database.
 
+## Browse the database (like phpMyAdmin)
+
+[Adminer](https://www.adminer.org/) is a web page for browsing tables, running SQL and checking imports. Run it in Docker next to the database:
+
+```bash
+docker network create slc-net
+docker network connect slc-net slc-pg
+docker run -d --name slc-adminer --restart unless-stopped --network slc-net \
+  -p 127.0.0.1:8080:8080 adminer:4.8.1
+```
+
+Open http://localhost:8080 and sign in:
+
+| Field | Value |
+|---|---|
+| System | PostgreSQL |
+| Server | `slc-pg` (the database container's name, not `localhost`) |
+| Username | `slc` |
+| Password | the password you chose in step 1 of the quick start |
+| Database | `slc_app` |
+
+Forgot the password? It is in `.env.local`, between `slc:` and `@`. To print it:
+
+```bash
+sed -E 's#^.*://[^:]+:([^@]+)@.*#\1#' .env.local
+```
+
+If your database container has another name, use that name in `docker network connect` and in the Server field. Stop Adminer with `docker stop slc-adminer` and start it with `docker start slc-adminer`. It only listens on your own machine (`127.0.0.1`).
+
+Good tables to start with: `import_batch` (uploads), `enrollment` (imported scores), `student_zone_snapshot` (zone results) and `audit_log` (who did what). Edit rows only in a test database. Snapshot tables and the audit log reject changes on purpose, and changing scores directly skips the import history.
+
+Prefer a desktop app? [DBeaver](https://dbeaver.io/) and [pgAdmin](https://www.pgadmin.org/) also work. Connect to host `localhost`, port `5432`, and the same database, username and password.
+
 ## Commands
 
 | Command | What it does |
