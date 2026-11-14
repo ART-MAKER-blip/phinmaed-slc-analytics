@@ -53,6 +53,14 @@ Migrations: `001_auth.sql` (accounts, sessions), `002_schema.sql` (everything el
 - API routes go through `handleApi('<permission>', …)` in `lib/api.ts`, or `handleApi(null, …)` when the handler applies finer rules itself (concern actions). Queries limit rows with `programsAtCampus()` / `scopeCondition()`.
 - Sign-ins, failed sign-ins, sign-outs, denied access and every data change are written to `audit_log`; data changes call `writeAudit(entry, client)` in the same transaction.
 
+## Security
+
+- **Passwords and sessions:** passwords are at least 12 characters and hashed with scrypt; a wrong email takes as long to check as a wrong password. Sessions are random tokens stored only as hashes, sent in an HttpOnly, SameSite=Lax cookie (Secure in production), and cleared when an account is deactivated or its password is reset.
+- **Sign-in limits** (`lib/login-limit.ts`, table `login_attempt`): 5 failed sign-ins for one email, or 30 from one address, within 15 minutes block further tries until the oldest failure is 15 minutes old (HTTP 429, logged as `login_blocked`). A successful sign-in clears that email's count. Behind a reverse proxy the address comes from `X-Forwarded-For`; make sure the proxy sets it.
+- **Cross-site requests** (`middleware.ts`, `lib/same-origin.ts`): API requests that change data are refused (403) when `Origin` or `Sec-Fetch-Site` shows they came from another website, so another site cannot use a signed-in user's cookie to upload or approve anything.
+- **Headers** (`next.config.mjs`): Content-Security-Policy (own scripts only, Google Fonts for the typeface, no framing), `X-Frame-Options: DENY`, `nosniff`, a strict referrer policy and a permissions policy; in production also HSTS and upgrade to HTTPS. The `X-Powered-By` header is off.
+- **Still needed before go-live:** upgrade Next.js (`npm audit` reports advisories against 14.x), HTTPS at the host, database backups, and forcing a password change after an administrator reset.
+
 ## SIS import
 
 - `lib/imports/read.ts` reads `.xlsx` (first sheet, or one named "Grade Deliberation Report", via `read-excel-file`) or UTF-8 `.csv` into a table of strings.

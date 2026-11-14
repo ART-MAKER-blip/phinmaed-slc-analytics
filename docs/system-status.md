@@ -55,7 +55,7 @@ The grading-period cycle works with the real SIS **Grade Deliberation Report** f
 | 20 | Snapshot reproducibility | Pass | Zones → Verify, including after a newer export updated the scores. |
 | 21 | Audit logging | Pass, with a difference | Creates and edits are logged with before/after values; records are closed or deactivated rather than deleted. |
 
-Automated tests: `npm test` runs 46 unit tests covering the SIS importer, period and zone rules, access rules, restricted notes and administration checks.
+Automated tests: `npm test` runs 57 unit tests covering the SIS importer, period and zone rules, access rules, restricted notes, administration checks, sign-in limits and the cross-site request check.
 
 ## Not done yet
 
@@ -66,7 +66,7 @@ Automated tests: `npm test` runs 46 unit tests covering the SIS importer, period
 - **Forgot password** link; the administrator resets passwords.
 - **Notifications** (for example when a referral is sent).
 - **Accounts for ALC, SSP and KSH** if the client later wants them (the access rules already support it).
-- **Production deployment**: HTTPS, sign-in rate limiting, backups and monitoring.
+- **Production deployment**: Next.js security upgrade, HTTPS, backups and monitoring. (Sign-in limits, security headers and a cross-site request check are done; see [Technical notes](technical-notes.md#security).)
 
 ## Open questions for the client
 

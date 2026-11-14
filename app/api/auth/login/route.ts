@@ -4,6 +4,8 @@ import { getPool } from '@/lib/db';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '@/lib/password';
 import { createDemoSession, verifyDemoCredentials } from '@/lib/demo-auth';
 import { writeAuditBestEffort } from '@/lib/audit';
+import { clientIp, retryAfterSeconds, waitMessage } from '@/lib/login-limit';
+import { clearFailures, countRecentFailures, recordFailure } from '@/lib/login-attempts';
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -40,6 +42,13 @@ export async function POST(request: Request) {
     }
   }
 
+  const ip = clientIp(request.headers);
+  const wait = retryAfterSeconds(await countRecentFailures(email, ip));
+  if (wait > 0) {
+    await writeAuditBestEffort({ userId: null, action: 'login_blocked', tableName: 'app_users', metadata: { email, ip } });
+    return NextResponse.json({ error: waitMessage(wait) }, { status: 429, headers: { 'Retry-After': String(wait) } });
+  }
+
   const result = await getPool().query<{
     id: string;
     password_hash: string;
@@ -55,6 +64,7 @@ export async function POST(request: Request) {
   const passwordMatches = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
 
   if (!user || !user.active || !passwordMatches) {
+    await recordFailure(email, ip);
     await writeAuditBestEffort({
       userId: user?.id ?? null,
       action: 'login_failed',
@@ -72,6 +82,7 @@ export async function POST(request: Request) {
     );
   }
 
+  await clearFailures(email);
   const token = await createSession(user.id);
   await writeAuditBestEffort({ userId: user.id, action: 'login', tableName: 'app_users', recordId: user.id });
   const response = NextResponse.json({ ok: true });
