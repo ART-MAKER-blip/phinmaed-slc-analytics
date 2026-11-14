@@ -33,7 +33,7 @@ test('demo sessions are validated and disabled outside development', () => {
   try {
     assert.equal(getDemoUserFromSession(session)?.role, 'admin');
     assert.equal(getDemoUserFromSession(`${session}x`), null);
-    assert.equal(getDemoUserFromSession(createDemoSession('data_manager'))?.role, 'data_manager');
+    assert.equal(getDemoUserFromSession(createDemoSession('coo'))?.role, 'coo');
     assert.ok(getDemoUserFromSession(session)?.permissions.includes('admin.users'));
     env.NODE_ENV = 'production';
     assert.equal(getDemoUserFromSession(session), null);

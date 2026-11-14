@@ -136,7 +136,10 @@ export function VerifyButton({ runId }: { runId: number }) {
   );
 }
 
-type Thresholds = { studentYellowFrom: number; studentRedFrom: number; subjectGreenMax: number; subjectYellowMax: number };
+type Thresholds = {
+  studentYellowFrom: number; studentRedFrom: number; subjectGreenMax: number; subjectYellowMax: number;
+  passingMark: number; failedValues: string; skippedValues: string; failingRemarks: string;
+};
 
 /** Create a draft rule set, or edit one (rules.configure). */
 export function RuleSetForm({ terms, existing }: {
@@ -163,7 +166,10 @@ export function RuleSetForm({ terms, existing }: {
     setOpen(false);
     router.refresh();
   }
-  const d = existing ?? { code: '', name: '', effectiveTerm: terms[0] ?? '', studentYellowFrom: 1, studentRedFrom: 2, subjectGreenMax: 10, subjectYellowMax: 40 };
+  const d = existing ?? {
+    code: '', name: '', effectiveTerm: terms[0] ?? '', studentYellowFrom: 1, studentRedFrom: 2, subjectGreenMax: 10, subjectYellowMax: 40,
+    passingMark: 60, failedValues: 'INC, ABS', skippedValues: 'NA', failingRemarks: 'FAILED, NO CREDIT',
+  };
   return (
     <form onSubmit={submit} className="grid w-full gap-3 rounded-lg border border-surface-border bg-surface-soft p-3 sm:grid-cols-3">
       <label className="text-xs font-semibold">Code<input name="code" defaultValue={d.code} disabled={Boolean(existing)} className="field mt-1" required placeholder="rs-2027-1" /></label>
@@ -176,7 +182,11 @@ export function RuleSetForm({ terms, existing }: {
       <div className="hidden sm:block" />
       <label className="text-xs font-semibold">Subject Green up to (% failed)<input name="subjectGreenMax" type="number" min={0} max={99.99} step={0.01} defaultValue={d.subjectGreenMax} className="field mt-1" required /></label>
       <label className="text-xs font-semibold">Subject Yellow up to (% failed)<input name="subjectYellowMax" type="number" min={0.01} max={99.99} step={0.01} defaultValue={d.subjectYellowMax} className="field mt-1" required /></label>
-      <p className="self-end text-xs text-ink-muted">Red covers the rest, up to 100%. Each range starts right after the one before.</p>
+      <p className="self-end text-xs text-ink-muted">Red covers the rest, up to 100%. Teachers use the same limits as subjects.</p>
+      <label className="text-xs font-semibold">Passing mark (period score)<input name="passingMark" type="number" min={0} max={100} step={0.01} defaultValue={d.passingMark} className="field mt-1" required /></label>
+      <label className="text-xs font-semibold">Period values that count as failed<input name="failedValues" defaultValue={d.failedValues} className="field mt-1" placeholder="INC, ABS" /></label>
+      <label className="text-xs font-semibold">Period values not counted<input name="skippedValues" defaultValue={d.skippedValues} className="field mt-1" placeholder="NA" /></label>
+      <label className="text-xs font-semibold sm:col-span-3">Final remarks that also count as failed in P3<input name="failingRemarks" defaultValue={d.failingRemarks} className="field mt-1" placeholder="FAILED, NO CREDIT" /></label>
       <div className="flex flex-wrap items-center gap-2 sm:col-span-3">
         <button type="submit" disabled={busy} className="btn btn-primary min-h-[38px] text-sm">{busy ? 'Saving…' : existing ? 'Save draft' : 'Create draft'}</button>
         <button type="button" className="btn min-h-[38px] text-sm" onClick={() => setOpen(false)}>Cancel</button>

@@ -2,6 +2,8 @@ import type { Zone, ZoneThreshold } from '@/lib/zones';
 
 export type ZoneCounts = Record<Zone, number>;
 
+export type TeacherResult = { name: string; failed: number; graded: number; rate: number; zone: Zone };
+
 export type RunInfo = {
   runId: number;
   campus: string;
@@ -31,10 +33,10 @@ export type ZoneOverview = {
     rows: {
       key: string; code: string; section: string; title: string;
       failed: number; graded: number; rate: number; zone: Zone;
-      teachers?: { name: string; failed: number; students: number; rate: number }[];
+      teachers?: TeacherResult[];
     }[];
   };
-  teachers?: { total: number };
+  teachers?: { total: number; counts: ZoneCounts; rows: TeacherResult[] };
 };
 
 export type SelectOption = { value: string; label: string };

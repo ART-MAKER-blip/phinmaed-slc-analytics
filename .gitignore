@@ -10,3 +10,9 @@ coverage/
 *.tsbuildinfo
 npm-debug.log*
 .DS_Store
+
+# Only made-up files may be committed in data/. Real SIS exports contain student records
+# (Data Privacy Act, RA 10173) and must never be committed.
+data/*
+!data/README.md
+!data/dummy_*.csv

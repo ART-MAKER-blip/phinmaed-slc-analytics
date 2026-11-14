@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { TEMPLATE_COLUMNS } from '@/lib/imports/grades';
+import { SIS_COLUMNS } from '@/lib/imports/grades';
 import { toCsv } from '@/lib/imports/csv';
 
 export type UploadOptions = {
@@ -11,18 +11,22 @@ export type UploadOptions = {
   periods: { grading_period_id: number; code: string; name: string }[];
 };
 
-const TEMPLATE_EXAMPLE: Record<(typeof TEMPLATE_COLUMNS)[number], string> = {
-  student_id: '2026-00014', last_name: 'Dela Cruz', first_name: 'Juan', program: 'BSIT', year_level: '1',
-  course_code: 'IT 101', course_title: 'Introduction to Computing', section: 'A', result_status: 'Failed',
-  grade: '68', teacher_id: 'T-0003', teacher_name: 'Santos, Maria', attempt: '1', term: '2026-1', period: 'P1',
+// A made-up example row in the SIS "Grade Deliberation Report" layout.
+const TEMPLATE_EXAMPLE: Record<(typeof SIS_COLUMNS)[number], string> = {
+  SESSION: 'SY 25-26 SEM II', COLLEGE: 'College of Information Technology Education',
+  COURSE: 'Bachelor of Science in Information Technology', 'STUDENT ID': "'2025-0000001", NAME: 'DELA CRUZ, JUAN P',
+  SEMESTER: 'Y1S2', 'YEAR LEVEL': 'YEAR 1', CODE: 'ITE 186', 'SUBJECT NAME': 'COMPUTER PROGRAMMING 2',
+  'SUBJECT TYPE': 'Lecture and Laboratory', UNITS: '3', SECTION: 'COC-FA1-IT1-01', TEACHER: 'SANTOS, MARIA L',
+  'SSP SECTION': '', 'SSP ADVISER': '', MODALITY: 'FLEX', 'ENLISTMENT MODE': 'Regular', 'ADMISSION TYPE': 'Regular',
+  GENDER: 'Male', P3: 'NA', P1: '82.5', P2: '58', GRADE: '', REMARKS: '',
 };
 
 function downloadTemplate() {
-  const csv = toCsv([[...TEMPLATE_COLUMNS], TEMPLATE_COLUMNS.map((c) => TEMPLATE_EXAMPLE[c])]);
+  const csv = toCsv([[...SIS_COLUMNS], SIS_COLUMNS.map((c) => TEMPLATE_EXAMPLE[c])]);
   const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'slc-grades-template.csv';
+  link.download = 'sis-grade-deliberation-template.csv';
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -65,22 +69,16 @@ export function UploadForm({ options }: { options: UploadOptions }) {
             {options.campuses.map((c) => <option key={c.campus_id} value={c.campus_id}>{c.name}</option>)}
           </select>
         </label>
-        <label className="text-xs font-semibold">
-          Term
+        <label className="col-span-2 text-xs font-semibold">
+          Term (must match SESSION in the file)
           <select name="termId" className="field mt-1" required>
-            {options.terms.map((t) => <option key={t.term_id} value={t.term_id}>{t.code}</option>)}
-          </select>
-        </label>
-        <label className="text-xs font-semibold">
-          Period
-          <select name="periodId" className="field mt-1" required>
-            {options.periods.map((p) => <option key={p.grading_period_id} value={p.grading_period_id}>{p.code}</option>)}
+            {options.terms.map((t) => <option key={t.term_id} value={t.term_id}>{t.code} · {t.name}</option>)}
           </select>
         </label>
       </div>
       <label className="text-xs font-semibold">
-        Grades file (.csv, up to 10 MB)
-        <input name="file" type="file" accept=".csv,text/csv" required className="mt-1 block w-full text-xs" />
+        SIS export (.xlsx or .csv, up to 15 MB)
+        <input name="file" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required className="mt-1 block w-full text-xs" />
       </label>
       {error && <p role="alert" className="text-xs font-semibold text-red-700">{error}</p>}
       <div className="flex flex-wrap gap-2">

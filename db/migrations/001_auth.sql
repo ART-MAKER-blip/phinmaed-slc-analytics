@@ -1,9 +1,9 @@
+-- Accounts and sessions. Roles and scopes are in user_role / user_role_scope (002_schema.sql).
 CREATE TABLE IF NOT EXISTS app_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT NOT NULL,
   name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('slc', 'dean', 'alc', 'ssp', 'ksh', 'coo', 'admin')),
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -106,11 +106,14 @@ export function sampleOverview(permissions: readonly Permission[]): ZoneOverview
       rows: rows.map((s) => ({
         key: s.code, code: s.code, section: 'A', title: s.code, failed: s.failed, graded: s.enrolled, rate: s.rate, zone: s.zone,
         teachers: permissions.includes('results.teacher')
-          ? [{ name: s.teacher, failed: s.failed, students: s.enrolled, rate: s.rate }]
+          ? [{ name: s.teacher, failed: s.failed, graded: s.enrolled, rate: s.rate, zone: subjectZone(s.rate) }]
           : undefined,
       })),
     };
   }
-  if (permissions.includes('results.teacher')) overview.teachers = { total: teacherIndicators.length };
+  if (permissions.includes('results.teacher')) {
+    const rows = teacherIndicators.map((t) => ({ name: t.teacher, failed: t.failed, graded: t.enrolled, rate: t.rate, zone: subjectZone(t.rate) }));
+    overview.teachers = { total: rows.length, counts: count(rows, (t) => t.zone), rows: [...rows].sort((a, b) => b.rate - a.rate).slice(0, 10) };
+  }
   return overview;
 }

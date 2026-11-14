@@ -102,6 +102,10 @@ export function thresholdsFromForm(value: Record<string, unknown>): ZoneThreshol
     { level: 'subject', zone: 'green', min: 0, max: greenMax },
     { level: 'subject', zone: 'yellow', min: round2(greenMax + 0.01), max: yellowMax },
     { level: 'subject', zone: 'red', min: round2(yellowMax + 0.01), max: 100 },
+    // Teacher zones use the same failure-rate limits as subjects, as in the SLC workbook.
+    { level: 'teacher', zone: 'green', min: 0, max: greenMax },
+    { level: 'teacher', zone: 'yellow', min: round2(greenMax + 0.01), max: yellowMax },
+    { level: 'teacher', zone: 'red', min: round2(yellowMax + 0.01), max: 100 },
   ];
   const errors = validateThresholds(thresholds);
   if (errors.length) throw new InputError(errors.join(' '));
@@ -119,4 +123,22 @@ export function parseCode(value: unknown, label: string) {
   const code = typeof value === 'string' ? value.trim() : '';
   if (!/^[A-Za-z][A-Za-z0-9-]{1,19}$/.test(code)) throw new InputError(`${label} must be 2 to 20 letters, digits or dashes, starting with a letter.`);
   return code;
+}
+
+/** Period settings of a rule set: passing mark and how text values and final remarks count. */
+export function periodRulesFromForm(value: Record<string, unknown>) {
+  const mark = Number(value.passingMark);
+  if (value.passingMark === '' || !Number.isFinite(mark) || mark < 0 || mark > 100 || Math.round(mark * 100) / 100 !== mark) {
+    throw new InputError('Passing mark must be a number from 0 to 100 with at most 2 decimals.');
+  }
+  const list = (key: string) => [...new Set(String(value[key] ?? '').split(',').map((v) => v.trim().toUpperCase()).filter(Boolean))];
+  const failedValues = list('failedValues');
+  const skippedValues = list('skippedValues');
+  const failingRemarks = list('failingRemarks');
+  const overlap = failedValues.filter((v) => skippedValues.includes(v));
+  if (overlap.length) throw new InputError(`${overlap.join(', ')} cannot be both failed and not counted.`);
+  for (const v of [...failedValues, ...skippedValues]) {
+    if (!/^[A-Z][A-Z ]{0,19}$/.test(v)) throw new InputError(`"${v}" is not a valid period value. Use letters, like INC or NA.`);
+  }
+  return { passingMark: mark, failedValues, skippedValues, failingRemarks };
 }

@@ -11,82 +11,80 @@ TypeScript, Next.js 14 (App Router), Tailwind CSS, PostgreSQL (via `pg`, no ORM)
 - `features/` holds page UI grouped by area (`dashboard`, `imports`, `zones`, `reports`, `deliberation`, `admin`). Files marked `'use client'` are interactive forms; everything else renders on the server.
 - `lib/` holds domain logic. Pure rule modules (`zones.ts`, `access.ts`, `imports/grades.ts`, `concerns/rules.ts`, `admin/validate.ts`) have unit tests next to them. Database code is in `*/server.ts` files marked `server-only`.
 - `db/migrations/` holds numbered SQL files applied by `npm run migrate`. Never edit an applied file; add a new one.
-- `samples/` holds made-up grade files for testing.
+- `data/` holds made-up files in the SIS export layout (`npm run make-dummy-data` regenerates them). Git ignores anything else in `data/`.
 
 | Route | Screen |
 |---|---|
 | `/login` | Email/password sign-in; credentials are checked against PostgreSQL |
-| `/` | Dashboard for the signed-in role: zone overview from the latest snapshot (SLC, Dean, COO, Dean of Deans, Team Learning), or live Data Manager, Administrator and Faculty dashboards |
-| `/imports` | Grades upload, import history (from PostgreSQL) |
+| `/` | Zone overview from the latest snapshot (SLC, Team Learning Lead, COO), or the administrator dashboard |
+| `/imports` | SIS export upload (.xlsx or .csv) and import history |
 | `/imports/[batchId]` | Validation report, file preview, accept or reject, original file and error list downloads |
 | `/deliberation` | Concerns from flagged results, filtered by status and access |
 | `/deliberation/[concernId]` | Deliberations, interventions with follow-ups, referrals with restricted notes, close/reopen |
 | `/audit` | Audit log review (administrator) |
 | `/admin/users` | Accounts, roles and campus/program scopes, teacher links, password resets |
-| `/admin/reference` | Campuses, programs offered per campus, terms and their dates |
+| `/admin/reference` | Campuses, colleges, programs offered per campus, terms and their dates |
 | `/account` | Your roles and scope; change your password |
-| `/zones` | Rule sets (approve), zone calculation runs, and verification |
-| `/reports` | Periodic and semester reports by program, outcome review, campus comparison, CSV export |
+| `/zones` | Rule sets (draft, approve, retire), zone calculation per period, runs and verification |
+| `/reports` | Reports by program and year level, period trend, outcome review, campus comparison, CSV export |
 | `/period-cycle` | Four-week period timeline (still sample data) |
 
 ## Design decisions
 
-- Teacher results are indicators only (no zone, rank or rating), as the proposal's delimitation requires.
-- No predictive or machine-learning scoring; zones are rule-based.
+- Zones are rule-based; there is no predictive or machine-learning scoring.
+- Teachers get zones, following the client's SLC collated summary. This departs from the proposal's "indicators only" delimitation and is listed as an open question in the README.
 - Brand colors are estimates. Set the official ones in `tailwind.config.ts` and add the official logo in `components/Sidebar.tsx`.
-- There is no public signup or role picker. An administrator provisions each account, and the assigned role determines which dashboard is shown. Passwords are stored as scrypt hashes; sessions use random, opaque tokens stored hashed in PostgreSQL and sent in HttpOnly cookies. Sign-out revokes the server-side session.
+- There is no public signup. An administrator provisions each account; the first role in `lib/roles.ts` order picks the dashboard. Passwords are scrypt hashes; sessions are random opaque tokens stored hashed in PostgreSQL and sent in HttpOnly cookies.
+
+## Database
+
+Migrations: `001_auth.sql` (accounts, sessions), `002_schema.sql` (everything else, plus roles and permissions), `003_reference_data.sql` (COC starting data). Main tables:
+
+- **Organization:** `campus`, `college`, `program` (names match the SIS `COLLEGE` and `COURSE` columns), `campus_program`, `term` (code `2025-2` = SY 25-26 Sem II), `grading_period` (P1–P3), `year_level`.
+- **Academic records:** `student` (SIS ID without the apostrophe, full name, gender, admission type), `student_term` (program, year level and SSP section/adviser per term), `course` (subject code, name, type, units), `course_offering` (subject + section + term), `teacher` (identified by normalized name, since the export has no teacher ID), `teaching_assignment`, `enrollment` (one row per student and subject offering: raw `p1_raw`/`p2_raw`/`p3_raw`, final grade, remarks, modality, enlistment mode).
+- **History:** a trigger copies every replaced `enrollment` row into `enrollment_history` with the period it was valid, so past snapshots can be recomputed. Enrollments cannot be deleted.
+- **Rules and results:** `zone_rule_set` (thresholds per level in `zone_threshold`, plus `passing_mark`, `failed_values`, `skipped_values`, `failing_remarks`; locked once approved), `snapshot_run`, `student_zone_snapshot`, `subject_result_snapshot`, `teacher_result_snapshot` (read-only).
+- **Workflow:** `concern` (one open concern per student per term), `deliberation`, `intervention`, `follow_up`, `referral` (with `recipient`), `referral_note`, `report_run`, `audit_log` (append-only).
 
 ## Access control
 
-- Roles, permissions and campus/program scopes live in the database (`role`, `permission`, `role_permission`, `user_role`, `user_role_scope`). A user may hold several roles; the dashboard shown is that of the first role in `lib/roles.ts` order.
-- Each restricted page calls `guardRoute()` from `lib/authorize.tsx` on the server; the page-to-permission map is `ROUTE_PERMISSIONS` in `lib/access.ts`. The sidebar uses the same map to hide links, but the server check is what enforces access.
-- API routes go through `handleApi('<permission>', …)` in `lib/api.ts` (or `handleApi(null, …)` when the handler applies finer rules itself, as concern actions do). Server-side queries limit rows with `programsAtCampus()` / `scopeCondition()` from `lib/access.ts`.
-- Sign-ins, failed sign-ins, sign-outs and denied page access are written to `audit_log`. For data changes, call `writeAudit(entry, client)` inside the same transaction.
-- `lib/permissions.ts` copies the role permissions for development demo accounts. `npm test` fails if it drifts from the migration.
+- Four roles (`slc`, `tl`, `coo`, `admin`) with permissions in `role_permission`; scopes in `user_role_scope` (campus and optional program; empty means all). `lib/permissions.ts` mirrors the role permissions for demo logins, and `npm test` fails if it drifts from the migration.
+- Each restricted page calls `guardRoute()` (`lib/authorize.tsx`); the page-to-permission map is `ROUTE_PERMISSIONS` in `lib/access.ts` (the most specific route wins). The sidebar uses the same map, but the server check enforces access.
+- API routes go through `handleApi('<permission>', …)` in `lib/api.ts`, or `handleApi(null, …)` when the handler applies finer rules itself (concern actions). Queries limit rows with `programsAtCampus()` / `scopeCondition()`.
+- Sign-ins, failed sign-ins, sign-outs, denied access and every data change are written to `audit_log`; data changes call `writeAudit(entry, client)` in the same transaction.
 
-## Grade imports
+## SIS import
 
-1. A user with `import.upload` (Data Manager, Administrator) chooses campus, term and period and uploads a CSV. Use **Template** on the imports page for the column layout.
-2. The server validates the file and stores the original bytes, a SHA-256 checksum, and every issue: missing columns, missing values, duplicate rows, unmatched identifiers (a student or teacher id whose name or program disagrees with existing records), term/period mismatches, unmapped programs and invalid values.
-3. On the batch page, accepting imports the valid rows and skips rows with issues. The file is validated again at that moment against the current database. Students, enrollments, courses, offerings, teachers and teaching assignments are created as needed; a later file for the same period replaces a grade, and the earlier value stays in the earlier batch's file.
-4. Uploads, accepts, rejects and original-file downloads are recorded in `audit_log`. The same file cannot be imported twice.
-
-Working assumptions to confirm with PHINMA: the SIS column layout (`lib/imports/grades.ts`), the grade scale (grades are stored as text and not range-checked), and how INC, dropped and withdrawn results count (`result_status` in `db/migrations/003_coc_reference_data.sql`). Excel files must be saved as CSV UTF-8 first; attendance and permit files are not connected yet.
+- `lib/imports/read.ts` reads `.xlsx` (first sheet, or one named "Grade Deliberation Report", via `read-excel-file`) or UTF-8 `.csv` into a table of strings.
+- `lib/imports/grades.ts` validates it (pure, unit tested). Required columns: `SESSION, COURSE, STUDENT ID, NAME, SEMESTER, CODE, SUBJECT NAME, SECTION, P1, P2, P3, REMARKS`; the other columns of the 24-column export are optional. Per row:
+  - **Errors (row skipped):** missing values, duplicate student and subject, `SESSION` for another term, `SEMESTER` for another semester, unknown `COURSE`, `SECTION` of another campus, a score outside 0–100 or an unknown text value, an unknown `GRADE` or `REMARKS`, a student whose name or program disagrees with existing records or with an earlier row.
+  - **Warnings (row imported):** `COLLEGE` differs from the program's college; year level taken from `YEAR LEVEL` because `SEMESTER` is missing.
+  - Normalization: apostrophe and spaces removed from `STUDENT ID`, spaces collapsed in names, `-` treated as empty, year level from `SEMESTER` (`Y2S2`), period text upper-cased, `REMARKS` matched case-insensitively.
+- `lib/imports/server.ts` stores the batch (original bytes, SHA-256, issues). Accepting re-validates against the current database and upserts students, `student_term`, subjects, offerings, teachers, assignments and enrollments in one transaction; only changed enrollments are updated, so re-importing the same data adds no history. The same file cannot be accepted twice.
 
 ## Zone calculation
 
-1. A rule set starts as a draft. A user with `rules.approve` (COO, Dean of Deans) approves it on `/zones`; the database then locks its thresholds. A rule set applies from its effective term until a later one is approved.
-2. A user with `zones.calculate` (Data Manager, Administrator) picks campus, term and period and runs the calculation. It uses each student's latest attempt per offering:
-   - **Student zone:** number of failed subjects (`result_status.counts_as_failed`).
-   - **Subject zone:** per offering (course section), failed ÷ graded, rounded to 2 decimals. Statuses with `counts_in_denominator = false` (dropped, withdrawn, no grade) are left out of the rate.
-   - **Teacher results:** counts per teaching assignment only, with no zone, rank or rating.
-3. Each run is saved with its rule set and the exact time it read the grades. Grade writes are blocked for that moment, and saved results cannot be edited.
-4. **Verify** recalculates a run from the grades in force at that time (replaced grades are kept in `grade_record_history`) and its rule set, then compares every row (functional test case 20).
+- `periodOutcome()` in `lib/zones.ts` decides each subject's outcome for a period: **not counted** if empty or a skipped value (`NA`); **failed** if a failed value (`INC`, `ABS`) or below the passing mark; in P3, also failed if `REMARKS` is a failing remark (`FAILED`, `NO CREDIT`).
+- `lib/snapshots/server.ts` locks `enrollment` for writes, reads the scores as of that moment, and computes: students (failed subjects among counted ones; students with nothing counted are left out), subject sections (failed ÷ counted), and teachers (failed ÷ counted across all their classes). Zones come from `classify()` with the rule set's thresholds.
+- The approved rule set for a term is the one with the latest effective term up to it. Only the Team Learning Lead (`rules.approve`) approves; the administrator (`rules.configure`) drafts.
+- **Verify** recomputes a run from `enrollment` + `enrollment_history` at its `calculated_at` with its rule set and compares every row.
 
 ## Dashboards and reports
 
-- Pages are rendered on the server from the latest snapshot run for the selected campus, term and period (URL parameters `campus`, `term`, `period`). The browser receives only what the role may see.
-- Figures are limited to the user's campus/program scope: students by their program, subject sections by the programs their course belongs to, and teacher indicators by those sections. Sections appear only with the matching permission (`results.student`, `results.subject`, `results.teacher`, `results.compare_campus`).
-- Reports show counts with rates per program, Red subject sections, and an outcome review: how students who were Yellow or Red in the previous period of the term moved. A semester report uses the latest period calculated in the term.
-- **Export CSV** (`report.generate`) loads the data again with the user's scope, records a `report_run` with its filters, and writes an audit entry. Requests for a program outside the user's scope are refused.
-- Faculty accounts see their own classes once an administrator links them to a teacher record (`app_users.teacher_id`).
-- Development demo logins (`SLCdemo-2026!`, no database) see the sample data from `lib/data.ts`; they cannot save anything.
+- Pages render on the server from the latest run for the selected campus, term and period (`campus`, `term`, `period` URL parameters); the browser only receives what the role may see.
+- Students are scoped by their program, subject sections by the programs their subject belongs to, teachers by whether they teach any subject of those programs.
+- Reports: zones by program and year level, subject and teacher zone counts, the **period trend** (each zone's share per period and the change from the previous one, as in the SLC workbook), the outcome review, and campus comparison (`results.compare_campus`). **Export CSV** re-loads with the user's scope and records a `report_run`.
+- Demo logins (`SLCdemo-2026!`, no database) see sample data from `lib/data.ts`.
 
-## Deliberation, interventions and referrals
+## Deliberation and referrals
 
-- A user with `concern.manage` (SLC, Dean, ALC) opens a concern about a student or subject section flagged in the latest zone results, within their scope.
-- On the concern: record deliberations (meeting date, decision, participants, evidence; the latest zone run is attached as evidence automatically), add interventions with an owner and due date, log follow-ups that can change an intervention's status, refer to ALC, SSP or KSH, and close or reopen the concern. A closed concern accepts no changes until reopened.
-- Access per concern (`lib/concerns/rules.ts`):
-  - **Full** – coordinators within campus/program scope see everything except restricted notes they lack permission for.
-  - **Team** – SSP, KSH and ALC staff see concerns referred to their team: the concern and their own team's referrals only, not deliberations or other teams' referrals. They can update their referral's status and add notes.
-  - **Owner** – a person assigned an intervention sees the concern and their own interventions, and can log follow-ups on them.
-- Restricted notes live in `referral_note` and are returned only to roles with `referral_note.view`, and for team staff only on their own team's referrals. Note text is never written to the audit log.
-- Every change is re-authorized on the server and audited. Records are not deleted; changes are status updates, and the audit log keeps who changed what from and to.
+- The SLC (`concern.manage`) opens concerns about flagged students or subject sections in scope; one open concern per student per term.
+- Concern pages: deliberations (latest zone run attached as evidence), interventions and follow-ups, referrals to ALC, SSP or KSH (SSP referrals record the student's `ssp_adviser`), close and reopen.
+- `lib/concerns/rules.ts` still supports team-level access for support staff (`ROLE_TEAMS`), but no role maps to a team because ALC, SSP and KSH have no accounts. Restricted notes are returned only to `referral_note.view` (SLC). Note text is never written to the audit log.
 
 ## Administration
 
-- **Users** (`admin.users`): create accounts with one or more roles, each scoped to a campus (all or one program). New accounts and password resets get a one-time temporary password shown once on screen; it is never stored in readable form or written to the audit log. Deactivating an account signs it out everywhere. Administrators cannot deactivate themselves or remove their own administrator role, and at least one active administrator always remains. A faculty account can be linked to one teacher record so it sees its own classes.
-- **Account**: every user can see their roles and scope and change their password; other sessions are then signed out.
-- **Reference data** (`admin.reference_data`): add campuses, programs and terms, rename them, set term dates, and choose which programs each campus offers. Codes cannot change after creation because imports and reports use them. Term codes must look like `2026-1`. A program with enrolled students cannot be removed from a campus.
-- **Rule sets** (on `/zones`): administrators (`rules.configure`) create, edit and delete drafts from four numbers (where student Yellow and Red start, where subject Green and Yellow end). COO and Dean of Deans (`rules.approve`) approve drafts and retire approved rule sets; past calculations keep the rule set they used.
-- `npm run create-user` and the demo seed still work for setting up the first administrator.
+- **Users** (`admin.users`): accounts with roles and scopes, one-time temporary passwords, deactivation, resets; lockout protection for administrators.
+- **Reference data** (`admin.reference_data`): campuses, colleges, programs (with their college) and which campus offers them, terms and dates. Codes are fixed once created; term codes must look like `2025-2`.
+- **Rule sets** (`/zones`): the administrator drafts thresholds and period settings; the Team Learning Lead approves or retires.
+- `npm run create-user` sets up the first administrator; `npm run seed-demo` and `npm run seed-sample` are for development only.

@@ -64,7 +64,7 @@ export function summarize<T>(items: T[], pick: (item: T) => Zone) {
 
 /* ---- Rule sets stored in the database (zone_threshold rows) ---- */
 
-export type ZoneLevel = 'student' | 'subject';
+export type ZoneLevel = 'student' | 'subject' | 'teacher';
 export type ZoneThreshold = { level: ZoneLevel; zone: Zone; min: number; max: number | null };
 
 /**
@@ -83,7 +83,7 @@ export function classify(thresholds: ZoneThreshold[], level: ZoneLevel, value: n
 /** Problems that would make a rule set unusable. An empty list means it can be approved. */
 export function validateThresholds(thresholds: ZoneThreshold[]): string[] {
   const errors: string[] = [];
-  for (const level of ['student', 'subject'] as const) {
+  for (const level of ['student', 'subject', 'teacher'] as const) {
     const rows = ZONES.map((zone) => thresholds.find((t) => t.level === level && t.zone === zone));
     if (rows.some((r) => !r)) {
       errors.push(`The ${level} level needs a green, a yellow and a red range.`);
@@ -101,11 +101,58 @@ export function validateThresholds(thresholds: ZoneThreshold[]): string[] {
         errors.push(`The ${level} ${high.zone} range must start right after ${low.zone} ends (${low.max} → ${low.max + step}).`);
       }
     }
-    if (level === 'subject' && red.max !== 100) errors.push('The subject red range must end at 100%.');
+    if (level !== 'student' && red.max !== 100) errors.push(`The ${level} red range must end at 100%.`);
     if (level === 'student' && red.max !== null) errors.push('The student red range must have no upper limit.');
     if (level === 'student' && rows.some((r) => !Number.isInteger(r!.min) || (r!.max !== null && !Number.isInteger(r!.max)))) {
       errors.push('Student ranges count failed subjects, so they must be whole numbers.');
     }
   }
   return errors;
+}
+
+/* ---- Period outcomes from the SIS export ---- */
+
+/** How a rule set treats period values (P1, P2, P3) and final remarks. */
+export type PeriodRules = {
+  passingMark: number;
+  /** Text values that count as failed, e.g. INC, ABS. */
+  failedValues: string[];
+  /** Text values that are not counted, e.g. NA. Empty cells are never counted. */
+  skippedValues: string[];
+  /** Final REMARKS that count as failed in P3, e.g. FAILED, NO CREDIT. */
+  failingRemarks: string[];
+};
+
+export const DEFAULT_PERIOD_RULES: PeriodRules = {
+  passingMark: 60,
+  failedValues: ['INC', 'ABS'],
+  skippedValues: ['NA'],
+  failingRemarks: ['FAILED', 'NO CREDIT'],
+};
+
+export type PeriodOutcome = 'passed' | 'failed' | 'not_counted';
+
+/**
+ * Whether one subject counts as failed in one period, from the raw period value.
+ * - empty or a skipped value (NA): not counted
+ * - a failed value (INC, ABS) or a score below the passing mark: failed
+ * - in P3 only, a failing final remark (FAILED, NO CREDIT) also makes it failed
+ * - any other text: not counted (the importer rejects such rows before this point)
+ */
+export function periodOutcome(
+  raw: string | null | undefined,
+  rules: PeriodRules,
+  options: { period?: string; remarks?: string | null } = {},
+): PeriodOutcome {
+  const value = (raw ?? '').trim().toUpperCase();
+  const remark = (options.remarks ?? '').trim().toUpperCase();
+  const failingRemark = options.period === 'P3' && remark !== '' && rules.failingRemarks.some((r) => r.toUpperCase() === remark);
+  if (value === '' || rules.skippedValues.some((v) => v.toUpperCase() === value)) {
+    return failingRemark ? 'failed' : 'not_counted';
+  }
+  if (rules.failedValues.some((v) => v.toUpperCase() === value)) return 'failed';
+  const score = Number(value);
+  if (!Number.isFinite(score)) return 'not_counted';
+  if (score < rules.passingMark || failingRemark) return 'failed';
+  return 'passed';
 }

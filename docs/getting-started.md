@@ -53,11 +53,13 @@ Use the same user, password and database name as in step 3. This file is ignored
 npm run migrate
 ```
 
-This creates every table from the ERD and the COC starting data: the campus, 4 programs, terms 2026-1 and 2026-2, periods P1–P3, the zones, a **draft** zone rule set, and all roles and permissions. Running it again is safe; it only applies what is new.
+This creates every table and the COC starting data: the campus, the colleges and the BSIT program with the names the SIS uses, terms 2025-2 (SY 25-26 Sem II) and 2026-1, periods P1–P3, the zones, a **draft** zone rule set, and the four roles with their permissions. Running it again is safe; it only applies what is new.
+
+> **Already set up the database before November 14, 2026?** The database design was rebuilt around the real SIS export, so an older local database cannot be upgraded. Delete it and start again: `docker rm -f slc-pg`, then `docker volume rm slc-pg-data`, then repeat steps 3–6.
 
 ## 6. Create test accounts
 
-This creates one database account for each of the 11 roles and prints a random password for each:
+This creates one database account for each of the 4 roles and prints a random password for each:
 
 **macOS / Linux / Git Bash**
 ```bash
@@ -71,7 +73,7 @@ $env:NODE_ENV="development"; $env:SLC_ALLOW_DEMO_SEED="1"; npm run seed-demo
 
 Copy the table it prints; the passwords are shown only once. Running it again gives every test account a new password. The command refuses to run in production.
 
-The accounts are `<role>.demo@example.test`, for example `slc.demo@example.test`, `data_manager.demo@example.test` and `admin.demo@example.test`.
+The accounts are `slc.demo@example.test` (Student Learning Coordinator), `tl.demo@example.test` (Team Learning Lead), `coo.demo@example.test` (COO, view only) and `admin.demo@example.test` (System Administrator).
 
 To create a single real account instead, run `npm run create-user` and answer the questions. After that, administrators create everyone else in the app (**Administration → Users and access**).
 
@@ -85,20 +87,28 @@ Open http://localhost:3000 and sign in with an account from step 6.
 
 > **Important:** use the password printed in step 6. In development, the login page also offers built-in demo logins with the shared password `SLCdemo-2026!`. Those demo logins do **not** use the database: they show sample data, cannot save anything, and are disabled in production. If you sign in with a test email and `SLCdemo-2026!`, you get the demo, not your database account.
 
-## 8. Try it with the sample data
+## 8. Try it with the dummy data
 
-The `samples/` folder has made-up grade files. A full walkthrough:
+The `data/` folder has made-up files in the exact layout of the SIS **Grade Deliberation Report** export (see [data/README.md](../data/README.md)). Real exports work the same way, as `.xlsx` or `.csv`.
 
-1. **Data Manager** (`data_manager.demo@example.test`) → **Import reports**
-   - Upload `samples/grades_with_errors.csv` (term 2026-1, period P1) to see the validation report, then click **Reject batch**.
-   - Upload `samples/grades_2026-1_P1.csv` with period **P1**, then click **Accept … rows**.
-   - Upload `samples/grades_2026-1_P2.csv` with period **P2**, then click **Accept … rows**.
-2. **COO** → **Zones** → **Approve** the rule set `rs-2026-1`. Zones cannot be calculated until a rule set is approved.
-3. **Data Manager** → **Zones** → **Calculate zones** for P1, then for P2. Click **Verify** on a run to check it can be reproduced.
-4. **SLC** → **Dashboard**: switch between P1 and P2. Then **Reports**: see students by program, the outcome review, and **Export CSV**.
-5. **SLC** → **Deliberation**: open a concern for a flagged student, record a deliberation, add an intervention owned by the Faculty account, and refer the student to KSH (with a restricted note) and SSP.
-6. Sign in as **KSH**, **SSP**, **Dean** and **Faculty** to see how each one sees the same concern differently.
-7. **Admin** → **Administration**: create an account, change a role's scope, and link `faculty.demo` to a teacher (for example *Lim, Carlo*) so the Faculty dashboard shows that teacher's classes. Then check the **Audit log**.
+**Quick way:** load the full dummy file and calculate P1–P3 in one command:
+
+```bash
+NODE_ENV=development SLC_ALLOW_SAMPLE_SEED=1 npm run seed-sample -- --calculate
+```
+
+**Step by step in the app**, to see each screen:
+
+1. **SLC** (`slc.demo@example.test`) → **Import reports**, campus COC, term **2025-2**:
+   - Upload `data/dummy_sis_grades_errors.csv` to see the validation report (errors are skipped, warnings are imported), then click **Reject batch**.
+   - Upload `data/dummy_sis_grades_P1_only.csv` and click **Accept … rows**. This is the export early in the term, with only P1 scores.
+2. **Team Learning Lead** (`tl.demo@example.test`) → **Zones** → **Approve** the rule set `rs-2025-2`. Zones cannot be calculated until a rule set is approved.
+3. **SLC** → **Zones** → **Calculate zones** for P1. P2 is refused because there are no P2 scores yet.
+4. **SLC** → **Import reports**: upload `data/dummy_sis_grades_sample.csv` (the end-of-term export) and accept it. The batch reports the rows as *updated*; earlier scores are kept in history.
+5. **SLC** → **Zones**: calculate P1, P2 and P3. Click **Verify** on the first P1 run: it still matches, because it is recomputed from the scores as they were then.
+6. **SLC**, **Team Learning Lead** or **COO** → **Dashboard**: switch between P1, P2 and P3. Then **Reports**: zones by program and year level, the period trend, the outcome review, and **Export CSV**.
+7. **SLC** → **Deliberation**: open a concern for a flagged student, record a deliberation, add an intervention, and refer the student to SSP (the student's SSP adviser is recorded) and KSH (with a restricted note).
+8. **Admin** (`admin.demo@example.test`) → **Administration**: create an account and change a role's scope; add a college or program. On **Zones**, try **New draft rule set** with a different passing mark. Then check the **Audit log**.
 
 The [user guide](user-guide.md) explains each of these screens.
 
@@ -123,7 +133,10 @@ The [user guide](user-guide.md) explains each of these screens.
 | `port is already allocated` when starting Docker | Something else uses port 5432. Change `-p 127.0.0.1:5432:5432` to `-p 127.0.0.1:5433:5432` and use `localhost:5433` in `.env.local`. |
 | Sign-in works but pages show sample data and nothing saves | You used `SLCdemo-2026!`. Sign out and use the password printed by `seed-demo`. |
 | "Your account has no role assigned yet" | An administrator must give the account a role in **Administration → Users and access**. |
-| "No approved zone rule set applies to term …" | Sign in as COO or Dean of Deans and approve a rule set on **Zones**. |
-| The dashboard says there are no zone results | Import grades for that period, then run **Calculate zones** for it. |
+| "No approved zone rule set applies to term …" | Sign in as the Team Learning Lead and approve a rule set on **Zones**. |
+| The dashboard says there are no zone results | Import the SIS export, then run **Calculate zones** for that period. |
+| "There are no P2 scores … yet" | The uploaded export has no P2 scores (all `NA`). Upload a newer export later in the term. |
+| `relation "…" already exists` when migrating | Your database is from before the November 14 redesign. Delete it and start again (see step 5). |
+| Import says SESSION is a different term | Choose the term that matches the file: `SY 25-26 SEM II` is **2025-2**. Add new terms in **Administration**. |
 | `'NODE_ENV' is not recognized` on Windows | Use the PowerShell version of the command in step 6. |
 | Forgot a test password | Run the `seed-demo` command again, or have an administrator use **Reset password**. |

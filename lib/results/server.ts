@@ -3,7 +3,6 @@ import { getPool } from '@/lib/db';
 import { hasPermission, programsAtCampus } from '@/lib/access';
 import type { AuthUser } from '@/lib/auth';
 import type { Zone, ZoneThreshold } from '@/lib/zones';
-import { failureRate } from '@/lib/zones';
 import type { ResultSelection, RunInfo, ZoneCounts, ZoneOverview } from './types';
 
 type Params = { campus?: string; term?: string; period?: string };
@@ -113,6 +112,17 @@ const SUBJECTS_IN_SCOPE = `
    AND ($2 OR EXISTS (SELECT 1 FROM program_course pc JOIN program p ON p.program_id = pc.program_id
                        WHERE pc.course_id = o.course_id AND p.code = ANY($3::text[])))`;
 
+/** Teachers in a run who teach at least one subject of the programs. Joins: s = teacher_result_snapshot, z. */
+const TEACHERS_IN_SCOPE = `
+  FROM teacher_result_snapshot s
+  JOIN zone z ON z.zone_id = s.zone_id
+ WHERE s.run_id = $1
+   AND ($2 OR EXISTS (SELECT 1 FROM teaching_assignment ta
+                        JOIN course_offering o ON o.offering_id = ta.offering_id
+                        JOIN program_course pc ON pc.course_id = o.course_id
+                        JOIN program p ON p.program_id = pc.program_id
+                       WHERE ta.teacher_id = s.teacher_id AND p.code = ANY($3::text[])))`;
+
 async function zoneCounts(sqlFrom: string, params: unknown[]) {
   const result = await getPool().query<{ zone: Zone; count: number }>(
     `SELECT z.code AS zone, count(*)::int AS count ${sqlFrom} GROUP BY z.code`,
@@ -138,7 +148,7 @@ export async function loadOverview(user: AuthUser, selection: { campus: string |
     const [summary, atRisk] = await Promise.all([
       zoneCounts(STUDENTS_IN_SCOPE, params),
       pool.query<{ id: string; name: string; program: string; year_level: number; failed: number; zone: Zone }>(
-        `SELECT st.sis_id AS id, st.last_name || ', ' || st.first_name AS name, p.code AS program,
+        `SELECT st.sis_id AS id, st.full_name AS name, p.code AS program,
                 s.year_level_id AS year_level, s.failed_count AS failed, z.code AS zone
            FROM student_zone_snapshot s
            JOIN student st ON st.student_id = s.student_id
@@ -146,7 +156,7 @@ export async function loadOverview(user: AuthUser, selection: { campus: string |
            JOIN campus_program cp ON cp.campus_program_id = s.campus_program_id
            JOIN program p ON p.program_id = cp.program_id
           WHERE s.run_id = $1 AND ($2 OR p.code = ANY($3::text[])) AND z.code <> 'green'
-          ORDER BY s.failed_count DESC, z.sort_order DESC, st.last_name, st.first_name
+          ORDER BY s.failed_count DESC, z.sort_order DESC, st.full_name
           LIMIT 10`,
         params,
       ),
@@ -182,26 +192,35 @@ export async function loadOverview(user: AuthUser, selection: { campus: string |
   }
 
   if (seeTeachers) {
-    // Each teacher's indicator covers only their classes within the user's scope.
-    const teachers = await pool.query<{ teacher_id: number; name: string; students: number; failed: number; offerings: number[] }>(
-      `SELECT t.teacher_id, t.name, sum(trs.student_count)::int AS students, sum(trs.failed_count)::int AS failed,
-              array_agg(DISTINCT ta.offering_id) AS offerings
+    // Teacher zones cover each teacher's classes in the run; scoped users see teachers who
+    // teach at least one subject of their programs.
+    const teachers = await pool.query<{ teacher_id: number; name: string; graded: number; failed: number; rate: string; zone: Zone; offerings: number[] }>(
+      `SELECT t.teacher_id, t.name, trs.graded_count AS graded, trs.failed_count AS failed, trs.failure_rate AS rate, z.code AS zone,
+              (SELECT array_agg(ta.offering_id) FROM teaching_assignment ta WHERE ta.teacher_id = t.teacher_id) AS offerings
          FROM teacher_result_snapshot trs
-         JOIN teaching_assignment ta ON ta.assignment_id = trs.assignment_id
-         JOIN teacher t ON t.teacher_id = ta.teacher_id
-         JOIN course_offering o ON o.offering_id = ta.offering_id
+         JOIN teacher t ON t.teacher_id = trs.teacher_id
+         JOIN zone z ON z.zone_id = trs.zone_id
         WHERE trs.run_id = $1
-          AND ($2 OR EXISTS (SELECT 1 FROM program_course pc JOIN program p ON p.program_id = pc.program_id
-                              WHERE pc.course_id = o.course_id AND p.code = ANY($3::text[])))
-        GROUP BY t.teacher_id, t.name`,
+          AND ($2 OR EXISTS (SELECT 1 FROM teaching_assignment ta
+                               JOIN course_offering o ON o.offering_id = ta.offering_id
+                               JOIN program_course pc ON pc.course_id = o.course_id
+                               JOIN program p ON p.program_id = pc.program_id
+                              WHERE ta.teacher_id = t.teacher_id AND p.code = ANY($3::text[])))
+        ORDER BY trs.failure_rate DESC, t.name`,
       params,
     );
-    overview.teachers = { total: teachers.rows.length };
+    const counts = emptyCounts();
+    for (const t of teachers.rows) counts[t.zone] += 1;
+    overview.teachers = {
+      total: teachers.rows.length,
+      counts,
+      rows: teachers.rows.slice(0, 10).map((t) => ({ name: t.name, failed: t.failed, graded: t.graded, rate: Number(t.rate), zone: t.zone })),
+    };
     if (overview.subjects) {
       for (const row of overview.subjects.rows) {
         row.teachers = teachers.rows
-          .filter((t) => t.offerings.includes(Number(row.key)))
-          .map((t) => ({ name: t.name, failed: t.failed, students: t.students, rate: failureRate(t.failed, t.students) }));
+          .filter((t) => (t.offerings ?? []).includes(Number(row.key)))
+          .map((t) => ({ name: t.name, failed: t.failed, graded: t.graded, rate: Number(t.rate), zone: t.zone }));
       }
     }
   }
@@ -215,7 +234,11 @@ export type ProgramReport = {
   type: 'periodic' | 'semester';
   programFilter: string;
   programs: { program: string; total: number; counts: ZoneCounts }[];
+  yearLevels: { yearLevel: number; total: number; counts: ZoneCounts }[];
   subjects: { total: number; counts: ZoneCounts };
+  teachers?: { total: number; counts: ZoneCounts };
+  /** Zone counts for each period of the term that has been calculated (as in the SLC workbook). */
+  trend: { period: string; students: { total: number; counts: ZoneCounts }; subjects: { total: number; counts: ZoneCounts }; teachers?: { total: number; counts: ZoneCounts } }[];
   outcome: null | {
     previousPeriod: string;
     flaggedBefore: number;
@@ -240,7 +263,7 @@ export async function loadProgramReport(
     : allowed === 'all' || allowed.includes(options.program) ? [options.program] : [];
   const report: ProgramReport = {
     run: null, type: options.type, programFilter: options.program,
-    programs: [], subjects: { total: 0, counts: emptyCounts() }, outcome: null,
+    programs: [], yearLevels: [], subjects: { total: 0, counts: emptyCounts() }, outcome: null, trend: [],
   };
   if (!selection.campus || !selection.term) return report;
 
@@ -267,6 +290,39 @@ export async function loadProgramReport(
   }
   report.programs = [...rows.values()];
   report.subjects = await zoneCounts(SUBJECTS_IN_SCOPE, params);
+  const seeTeachers = hasPermission(user, 'results.teacher');
+  if (seeTeachers) report.teachers = await zoneCounts(TEACHERS_IN_SCOPE, params);
+
+  const byYear = await pool.query<{ year: number; zone: Zone; count: number }>(
+    `SELECT s.year_level_id AS year, z.code AS zone, count(*)::int AS count ${STUDENTS_IN_SCOPE} GROUP BY s.year_level_id, z.code ORDER BY 1`,
+    params,
+  );
+  const years = new Map<number, { yearLevel: number; total: number; counts: ZoneCounts }>();
+  for (const r of byYear.rows) {
+    const row = years.get(r.year) ?? { yearLevel: r.year, total: 0, counts: emptyCounts() };
+    row.counts[r.zone] += r.count;
+    row.total += r.count;
+    years.set(r.year, row);
+  }
+  report.yearLevels = [...years.values()];
+
+  // Latest run for each period of the term, for the P1 -> P2 -> P3 trend.
+  const periodRuns = await pool.query<{ run_id: number; period: string }>(
+    `SELECT DISTINCT ON (r.grading_period_id) r.run_id, gp.code AS period
+       FROM snapshot_run r JOIN grading_period gp ON gp.grading_period_id = r.grading_period_id
+      WHERE r.campus_id = $1 AND r.term_id = $2
+      ORDER BY r.grading_period_id, r.calculated_at DESC`,
+    [run.campus_id, run.term_id],
+  );
+  for (const pr of periodRuns.rows) {
+    const p = [pr.run_id, ...programParams(programs)];
+    report.trend.push({
+      period: pr.period,
+      students: await zoneCounts(STUDENTS_IN_SCOPE, p),
+      subjects: await zoneCounts(SUBJECTS_IN_SCOPE, p),
+      teachers: seeTeachers ? await zoneCounts(TEACHERS_IN_SCOPE, p) : undefined,
+    });
+  }
 
   // Outcome review: students flagged in the latest earlier period of the same term.
   const previous = await pool.query<{ run_id: number; period: string }>(

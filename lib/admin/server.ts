@@ -1,7 +1,8 @@
 import 'server-only';
+import { serial } from '@/lib/serial';
 import { randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { ApiError } from '@/lib/api';
+import { ApiError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import { hashSessionToken, type AuthUser } from '@/lib/auth';
 import { getPool } from '@/lib/db';
@@ -42,12 +43,12 @@ function temporaryPassword() {
 
 export type UserRow = {
   id: string; name: string; email: string; active: boolean; created_at: Date;
-  teacher: string | null; teacher_staff_no: string | null; last_login: Date | null;
+  last_login: Date | null;
   assignments: Assignment[];
 };
 
 const USER_SELECT = `
-  SELECT u.id::text, u.name, u.email, u.active, u.created_at, t.name AS teacher, t.staff_no AS teacher_staff_no,
+  SELECT u.id::text, u.name, u.email, u.active, u.created_at,
          (SELECT max(a.logged_at) FROM audit_log a WHERE a.user_id = u.id AND a.action = 'login') AS last_login,
          COALESCE((SELECT json_agg(json_build_object('role', r.code, 'campus', c.code, 'program', p.code)
                                    ORDER BY r.role_id, c.code NULLS FIRST, p.code NULLS FIRST)
@@ -57,7 +58,7 @@ const USER_SELECT = `
                      LEFT JOIN campus c ON c.campus_id = s.campus_id
                      LEFT JOIN program p ON p.program_id = s.program_id
                     WHERE ur.user_id = u.id), '[]') AS assignments
-    FROM app_users u LEFT JOIN teacher t ON t.teacher_id = u.teacher_id`;
+    FROM app_users u`;
 
 export async function listUsers(): Promise<UserRow[]> {
   return (await getPool().query<UserRow>(`${USER_SELECT} ORDER BY u.active DESC, u.name`)).rows;
@@ -70,22 +71,18 @@ export async function getUser(id: string): Promise<UserRow | null> {
 
 export async function adminOptions() {
   const pool = getPool();
-  const [campuses, programs, teachers] = await Promise.all([
+  const [campuses, programs] = await Promise.all([
     pool.query<{ code: string; name: string }>('SELECT code, name FROM campus ORDER BY name'),
     pool.query<{ code: string; name: string }>('SELECT code, name FROM program ORDER BY code'),
-    pool.query<{ staff_no: string; name: string; linked: string | null }>(
-      `SELECT t.staff_no, t.name, (SELECT u.id::text FROM app_users u WHERE u.teacher_id = t.teacher_id LIMIT 1) AS linked
-         FROM teacher t ORDER BY t.name`,
-    ),
   ]);
-  return { campuses: campuses.rows, programs: programs.rows, teachers: teachers.rows };
+  return { campuses: campuses.rows, programs: programs.rows };
 }
 
 async function knownCodes(db: PoolClient) {
-  const [c, p] = await Promise.all([
-    db.query<{ code: string }>('SELECT code FROM campus'),
-    db.query<{ code: string }>('SELECT code FROM program'),
-  ]);
+  const [c, p] = await serial([
+    () => db.query<{ code: string }>('SELECT code FROM campus'),
+    () => db.query<{ code: string }>('SELECT code FROM program'),
+  ] as const);
   return { campuses: c.rows.map((r) => r.code), programs: p.rows.map((r) => r.code) };
 }
 
@@ -117,28 +114,15 @@ async function otherActiveAdmins(db: PoolClient, excludeUserId: string) {
   return result.rows[0].count;
 }
 
-async function teacherIdFor(db: PoolClient, staffNo: unknown, userId: string | null) {
-  if (staffNo === undefined || staffNo === null || staffNo === '') return null;
-  const t = await db.query<{ teacher_id: number; linked: string | null }>(
-    `SELECT t.teacher_id, (SELECT u.id::text FROM app_users u WHERE u.teacher_id = t.teacher_id AND u.id IS DISTINCT FROM $2::uuid LIMIT 1) AS linked
-       FROM teacher t WHERE t.staff_no = $1`,
-    [String(staffNo), userId],
-  );
-  if (!t.rows[0]) throw new InputError('Choose a teacher from the list.');
-  if (t.rows[0].linked) throw new InputError('That teacher is already linked to another account.');
-  return t.rows[0].teacher_id;
-}
-
 export async function createUser(actor: AuthUser, input: Record<string, unknown>) {
   return inTransaction(async (db) => {
     const name = parseName(input.name);
     const email = parseEmail(input.email);
     const assignments = parseAssignments(input.assignments, await knownCodes(db));
-    const teacherId = await teacherIdFor(db, input.teacherStaffNo, null);
     const password = temporaryPassword();
     const created = await db.query<{ id: string }>(
-      'INSERT INTO app_users (email, name, password_hash, teacher_id) VALUES ($1, $2, $3, $4) RETURNING id::text',
-      [email, name, await hashPassword(password), teacherId],
+      'INSERT INTO app_users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id::text',
+      [email, name, await hashPassword(password)],
     );
     const id = created.rows[0].id;
     await writeAssignments(db, id, assignments);
@@ -157,7 +141,6 @@ export async function updateUser(actor: AuthUser, id: string, input: Record<stri
     const email = parseEmail(input.email);
     const active = input.active === true;
     const assignments = parseAssignments(input.assignments, await knownCodes(db));
-    const teacherId = await teacherIdFor(db, input.teacherStaffNo, id);
 
     checkAdminLockout({
       actorId: actor.id,
@@ -168,15 +151,15 @@ export async function updateUser(actor: AuthUser, id: string, input: Record<stri
       otherActiveAdmins: await otherActiveAdmins(db, id),
     });
 
-    await db.query('UPDATE app_users SET name = $2, email = $3, active = $4, teacher_id = $5 WHERE id = $1', [id, name, email, active, teacherId]);
+    await db.query('UPDATE app_users SET name = $2, email = $3, active = $4 WHERE id = $1', [id, name, email, active]);
     await writeAssignments(db, id, assignments);
     // A deactivated account is signed out everywhere at once.
     if (!active) await db.query('DELETE FROM auth_sessions WHERE user_id = $1', [id]);
     await writeAudit({
       userId: actor.id, action: 'user_update', tableName: 'app_users', recordId: id,
       metadata: {
-        before: { name: current.name, email: current.email, active: current.active, teacher: current.teacher_staff_no, assignments: current.assignments },
-        after: { name, email, active, teacherId, assignments },
+        before: { name: current.name, email: current.email, active: current.active, assignments: current.assignments },
+        after: { name, email, active, assignments },
       },
     }, db);
     return { id };
@@ -215,22 +198,22 @@ export async function changeOwnPassword(user: AuthUser, currentToken: string, in
 
 export async function referenceData() {
   const pool = getPool();
-  const [campuses, programs, offered, years, terms] = await Promise.all([
-    pool.query<{ campus_id: number; code: string; name: string; status: string }>('SELECT campus_id, code, name, status FROM campus ORDER BY name'),
-    pool.query<{ program_id: number; code: string; name: string }>('SELECT program_id, code, name FROM program ORDER BY code'),
+  const [campuses, colleges, programs, offered, terms] = await Promise.all([
+    pool.query<{ code: string; name: string; status: string }>('SELECT code, name, status FROM campus ORDER BY name'),
+    pool.query<{ code: string; name: string }>('SELECT code, name FROM college ORDER BY code'),
+    pool.query<{ code: string; name: string; college: string }>(
+      'SELECT p.code, p.name, c.code AS college FROM program p JOIN college c USING (college_id) ORDER BY p.code',
+    ),
     pool.query<{ campus: string; program: string }>(
       'SELECT c.code AS campus, p.code AS program FROM campus_program cp JOIN campus c USING (campus_id) JOIN program p USING (program_id)',
     ),
-    pool.query<{ label: string }>('SELECT label FROM academic_year ORDER BY label DESC'),
-    pool.query<{ term_id: number; code: string; name: string; academic_year: string; start_date: string | null; end_date: string | null; grade_release_date: string | null; in_use: boolean }>(
-      `SELECT t.term_id, t.code, t.name, ay.label AS academic_year,
-              to_char(t.start_date, 'YYYY-MM-DD') AS start_date, to_char(t.end_date, 'YYYY-MM-DD') AS end_date,
-              to_char(t.grade_release_date, 'YYYY-MM-DD') AS grade_release_date,
-              EXISTS (SELECT 1 FROM course_offering o WHERE o.term_id = t.term_id) AS in_use
-         FROM term t JOIN academic_year ay USING (academic_year_id) ORDER BY t.code DESC`,
+    pool.query<{ code: string; name: string; school_year: string; start_date: string | null; end_date: string | null; grade_release_date: string | null }>(
+      `SELECT code, name, school_year, to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date,
+              to_char(grade_release_date, 'YYYY-MM-DD') AS grade_release_date
+         FROM term ORDER BY code DESC`,
     ),
   ]);
-  return { campuses: campuses.rows, programs: programs.rows, offered: offered.rows, academicYears: years.rows.map((y) => y.label), terms: terms.rows };
+  return { campuses: campuses.rows, colleges: colleges.rows, programs: programs.rows, offered: offered.rows, terms: terms.rows };
 }
 
 export async function referenceAction(actor: AuthUser, input: Record<string, unknown>) {
@@ -255,11 +238,29 @@ export async function referenceAction(actor: AuthUser, input: Record<string, unk
         await audit('campus_update', 'campus', String(input.code), { name, status });
         return { ok: true };
       }
+      case 'add_college': {
+        const code = parseCode(input.code, 'College code').toUpperCase();
+        const name = parseName(input.name);
+        const r = await db.query<{ college_id: number }>('INSERT INTO college (code, name) VALUES ($1, $2) RETURNING college_id', [code, name]);
+        await audit('college_create', 'college', r.rows[0].college_id, { code, name });
+        return { ok: true };
+      }
+      case 'rename_college': {
+        const name = parseName(input.name);
+        const r = await db.query('UPDATE college SET name = $2 WHERE code = $1', [input.code, name]);
+        if (r.rowCount === 0) throw new ApiError('College not found.', 404);
+        await audit('college_update', 'college', String(input.code), { name });
+        return { ok: true };
+      }
       case 'add_program': {
         const code = parseCode(input.code, 'Program code');
         const name = parseName(input.name);
-        const r = await db.query<{ program_id: number }>('INSERT INTO program (code, name) VALUES ($1, $2) RETURNING program_id', [code, name]);
-        await audit('program_create', 'program', r.rows[0].program_id, { code, name });
+        const r = await db.query<{ program_id: number }>(
+          'INSERT INTO program (college_id, code, name) SELECT college_id, $2, $3 FROM college WHERE code = $1 RETURNING program_id',
+          [input.college, code, name],
+        );
+        if (!r.rows[0]) throw new InputError('Choose the college the program belongs to.');
+        await audit('program_create', 'program', r.rows[0].program_id, { code, name, college: input.college });
         return { ok: true };
       }
       case 'rename_program': {
@@ -280,7 +281,7 @@ export async function referenceAction(actor: AuthUser, input: Record<string, unk
         if (offered) {
           await db.query('INSERT INTO campus_program (campus_id, program_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [campus_id, program_id]);
         } else {
-          const used = await db.query('SELECT 1 FROM enrollment e JOIN campus_program cp USING (campus_program_id) WHERE cp.campus_id = $1 AND cp.program_id = $2 LIMIT 1', [campus_id, program_id]);
+          const used = await db.query('SELECT 1 FROM student_term st JOIN campus_program cp USING (campus_program_id) WHERE cp.campus_id = $1 AND cp.program_id = $2 LIMIT 1', [campus_id, program_id]);
           if (used.rowCount) throw new ApiError('Students are enrolled in this program at this campus, so it cannot be removed.', 409);
           await db.query('DELETE FROM campus_program WHERE campus_id = $1 AND program_id = $2', [campus_id, program_id]);
         }
@@ -291,13 +292,11 @@ export async function referenceAction(actor: AuthUser, input: Record<string, unk
         const code = parseTermCode(input.code);
         const name = parseName(input.name);
         const year = Number(code.slice(0, 4));
-        const label = `${year}-${year + 1}`;
         const dates = termDates(input);
-        await db.query('INSERT INTO academic_year (label) VALUES ($1) ON CONFLICT (label) DO NOTHING', [label]);
         const r = await db.query<{ term_id: number }>(
-          `INSERT INTO term (academic_year_id, code, name, start_date, end_date, grade_release_date)
-           SELECT academic_year_id, $2, $3, $4, $5, $6 FROM academic_year WHERE label = $1 RETURNING term_id`,
-          [label, code, name, dates.start, dates.end, dates.release],
+          `INSERT INTO term (code, school_year, semester, name, start_date, end_date, grade_release_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING term_id`,
+          [code, `${year}-${year + 1}`, Number(code.slice(5)), name, dates.start, dates.end, dates.release],
         );
         await audit('term_create', 'term', r.rows[0].term_id, { code, name, ...dates });
         return { ok: true };

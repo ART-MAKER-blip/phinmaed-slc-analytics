@@ -17,7 +17,7 @@ export default function ImportsPage({ canUpload, unavailableReason, options, bat
       <header>
         <h1 className="text-3xl font-bold tracking-tight text-navy">Import SIS reports</h1>
         <p className="mt-1.5 text-sm text-ink-muted">
-          Upload a grades file, review the validation report, then accept the valid rows. The original file is kept for audit.
+          Upload the SIS export, review the validation report, then accept the valid rows. The original file is kept for audit.
         </p>
       </header>
 
@@ -27,10 +27,10 @@ export default function ImportsPage({ canUpload, unavailableReason, options, bat
         <section className="grid items-start gap-3 lg:grid-cols-3" aria-label="Import sources">
           <article className="card import-source-card lg:col-span-1">
             <div className="flex items-start justify-between gap-2">
-              <h2 className="text-sm font-bold leading-5">Periodic grades</h2>
+              <h2 className="text-sm font-bold leading-5">SIS grade deliberation report</h2>
               <span className="import-source-state import-state-ok">Connected</span>
             </div>
-            <p className="text-xs leading-5 text-ink-muted">Exported from the SIS for the selected term and period, saved as CSV.</p>
+            <p className="text-xs leading-5 text-ink-muted">The SIS export with P1, P2 and P3 scores. Upload it again later in the term to fill in newer periods.</p>
             {canUpload ? (
               <UploadForm options={options} />
             ) : (
@@ -65,7 +65,7 @@ export default function ImportsPage({ canUpload, unavailableReason, options, bat
             <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr>
-                  <th className="th">Batch</th><th className="th">File</th><th className="th">Term · period</th>
+                  <th className="th">Batch</th><th className="th">File</th><th className="th">Term</th>
                   <th className="th">Uploaded</th><th className="th">Rows</th><th className="th">Issues</th><th className="th">Status</th>
                 </tr>
               </thead>
@@ -76,7 +76,7 @@ export default function ImportsPage({ canUpload, unavailableReason, options, bat
                       <Link className="text-navy underline" href={`/imports/${batch.batch_id}`}>IB-{String(batch.batch_id).padStart(4, '0')}</Link>
                     </td>
                     <td className="td break-all">{batch.filename}</td>
-                    <td className="td">{batch.term_code ?? '—'} · {batch.period_code ?? '—'}</td>
+                    <td className="td">{batch.term_code}</td>
                     <td className="td">{formatDateTime(batch.uploaded_at)}<br /><span className="text-xs text-ink-muted">{batch.uploaded_by_name}</span></td>
                     <td className="td">
                       {batch.validation_status === 'accepted'

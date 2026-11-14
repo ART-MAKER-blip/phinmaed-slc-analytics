@@ -1,6 +1,6 @@
 import 'server-only';
 import type { Pool, PoolClient } from 'pg';
-import { ApiError } from '@/lib/api';
+import { ApiError } from '@/lib/errors';
 import { writeAudit } from '@/lib/audit';
 import type { AuthUser } from '@/lib/auth';
 import { getPool } from '@/lib/db';
@@ -20,18 +20,19 @@ type ConcernRow = {
   type_code: string; type_name: string; campus: string; campus_id: number; term: string; term_id: number;
   student_id: number | null; sis_id: string | null; student_name: string | null; student_program: string | null;
   offering_id: number | null; course_code: string | null; section: string | null; course_title: string | null;
-  teacher_name: string | null; opened_by_name: string;
+  teacher_name: string | null; opened_by_name: string; ssp_adviser: string | null;
   course_programs: string[]; referral_teams: string[]; intervention_owners: string[]; open_interventions: number;
 };
 
 const CONCERN_SELECT = `
   SELECT c.concern_id, c.status, c.description, c.opened_at, c.closed_at, ct.code AS type_code, ct.name AS type_name,
          cam.code AS campus, cam.campus_id, t.code AS term, t.term_id,
-         c.student_id, st.sis_id, st.last_name || ', ' || st.first_name AS student_name,
-         (SELECT p.code FROM enrollment e
-            JOIN campus_program cp ON cp.campus_program_id = e.campus_program_id
+         c.student_id, st.sis_id, st.full_name AS student_name,
+         (SELECT p.code FROM student_term stt
+            JOIN campus_program cp ON cp.campus_program_id = stt.campus_program_id
             JOIN program p ON p.program_id = cp.program_id
-           WHERE e.student_id = c.student_id AND e.academic_year_id = t.academic_year_id) AS student_program,
+           WHERE stt.student_id = c.student_id AND stt.term_id = c.term_id) AS student_program,
+         (SELECT stt.ssp_adviser FROM student_term stt WHERE stt.student_id = c.student_id AND stt.term_id = c.term_id) AS ssp_adviser,
          o.offering_id, crs.code AS course_code, o.section, crs.title AS course_title, tch.name AS teacher_name,
          u.name AS opened_by_name,
          COALESCE((SELECT array_agg(DISTINCT p.code) FROM program_course pc JOIN program p ON p.program_id = pc.program_id
@@ -46,9 +47,8 @@ const CONCERN_SELECT = `
     JOIN term t ON t.term_id = c.term_id
     JOIN app_users u ON u.id = c.opened_by
     LEFT JOIN student st ON st.student_id = c.student_id
-    LEFT JOIN teaching_assignment ta ON ta.assignment_id = c.assignment_id
-    LEFT JOIN teacher tch ON tch.teacher_id = ta.teacher_id
-    LEFT JOIN course_offering o ON o.offering_id = COALESCE(c.offering_id, ta.offering_id)
+    LEFT JOIN teacher tch ON tch.teacher_id = c.teacher_id
+    LEFT JOIN course_offering o ON o.offering_id = c.offering_id
     LEFT JOIN course crs ON crs.course_id = o.course_id`;
 
 function accessFor(user: AuthUser, row: ConcernRow): AccessLevel | null {
@@ -139,8 +139,8 @@ export async function getConcernDetail(user: AuthUser, concernId: number) {
         WHERE i.concern_id = $1 ORDER BY i.due_date, i.intervention_id`,
       [concernId],
     ),
-    pool.query<{ referral_id: number; team: string; team_name: string; referred_by: string; referral_date: string; status: string }>(
-      `SELECT r.referral_id, rt.code AS team, rt.name AS team_name, u.name AS referred_by,
+    pool.query<{ referral_id: number; team: string; team_name: string; recipient: string | null; referred_by: string; referral_date: string; status: string }>(
+      `SELECT r.referral_id, rt.code AS team, rt.name AS team_name, r.recipient, u.name AS referred_by,
               to_char(r.referral_date, 'YYYY-MM-DD') AS referral_date, r.status
          FROM referral r JOIN referral_team rt ON rt.referral_team_id = r.referral_team_id JOIN app_users u ON u.id = r.referred_by
         WHERE r.concern_id = $1 ORDER BY r.referral_date DESC, r.referral_id DESC`,
@@ -225,7 +225,7 @@ export async function concernFormOptions(user: AuthUser, campus: string, term: s
   const [types, students, subjects] = await Promise.all([
     pool.query<{ code: string; name: string }>('SELECT code, name FROM concern_type ORDER BY concern_type_id'),
     runId === null ? null : pool.query<{ sis_id: string; name: string; program: string; failed: number; zone: Zone }>(
-      `SELECT st.sis_id, st.last_name || ', ' || st.first_name AS name, p.code AS program, s.failed_count AS failed, z.code AS zone
+      `SELECT st.sis_id, st.full_name AS name, p.code AS program, s.failed_count AS failed, z.code AS zone
          FROM student_zone_snapshot s
          JOIN student st ON st.student_id = s.student_id
          JOIN zone z ON z.zone_id = s.zone_id
@@ -234,7 +234,7 @@ export async function concernFormOptions(user: AuthUser, campus: string, term: s
         WHERE s.run_id = $1 AND z.code <> 'green' AND ($2 OR p.code = ANY($3::text[]))
           AND NOT EXISTS (SELECT 1 FROM concern c JOIN snapshot_run r ON r.run_id = $1
                            WHERE c.student_id = s.student_id AND c.term_id = r.term_id AND c.status <> 'closed')
-        ORDER BY s.failed_count DESC, st.last_name LIMIT 200`,
+        ORDER BY s.failed_count DESC, st.full_name LIMIT 200`,
       [runId, all, list],
     ),
     runId === null ? null : pool.query<{ offering_id: number; code: string; section: string; rate: string; zone: Zone }>(
@@ -285,6 +285,9 @@ async function inTransaction<T>(work: (db: PoolClient) => Promise<T>): Promise<T
   } catch (error) {
     await client.query('ROLLBACK');
     if (error instanceof InputError) throw new ApiError(error.message, 400);
+    if (error && typeof error === 'object' && 'constraint' in error && error.constraint === 'concern_one_open_per_student') {
+      throw new ApiError('This student already has an open concern this term. Add to that concern instead.', 409);
+    }
     throw error;
   } finally {
     client.release();
@@ -309,8 +312,8 @@ export async function createConcern(user: AuthUser, input: Record<string, unknow
     const programs = programsAtCampus(user, campus);
     ensure(user, programs === 'all' || programs.length > 0, 'You cannot open concerns at this campus.');
 
-    const ids = await db.query<{ campus_id: number; term_id: number; academic_year_id: number; type_id: number }>(
-      `SELECT c.campus_id, t.term_id, t.academic_year_id, ct.concern_type_id AS type_id
+    const ids = await db.query<{ campus_id: number; term_id: number; type_id: number }>(
+      `SELECT c.campus_id, t.term_id, ct.concern_type_id AS type_id
          FROM campus c, term t, concern_type ct WHERE c.code = $1 AND t.code = $2 AND ct.code = $3`,
       [campus, term, typeCode],
     );
@@ -323,11 +326,11 @@ export async function createConcern(user: AuthUser, input: Record<string, unknow
     if (kind === 'student') {
       const student = await db.query<{ student_id: number; program: string }>(
         `SELECT s.student_id, p.code AS program FROM student s
-           JOIN enrollment e ON e.student_id = s.student_id AND e.academic_year_id = $2
-           JOIN campus_program cp ON cp.campus_program_id = e.campus_program_id AND cp.campus_id = $3
+           JOIN student_term stt ON stt.student_id = s.student_id AND stt.term_id = $2
+           JOIN campus_program cp ON cp.campus_program_id = stt.campus_program_id AND cp.campus_id = $3
            JOIN program p ON p.program_id = cp.program_id
           WHERE s.sis_id = $1`,
-        [value, ref.academic_year_id, ref.campus_id],
+        [value, ref.term_id, ref.campus_id],
       );
       const found = student.rows[0];
       if (!found || !concernInProgramScope(programs, { studentProgram: found.program, coursePrograms: [] })) {
@@ -476,10 +479,12 @@ export async function concernAction(user: AuthUser, concernId: number, input: Re
         const team = oneOf(input.team, REFERRAL_TEAMS, 'referral team');
         const note = text(input.note, 'Restricted note', { optional: true, max: 2000 });
         if (note) ensure(user, canAddNote(user, team), 'You cannot add restricted notes for this team.');
+        // An SSP referral goes to the student's SSP adviser from the SIS export, when known.
+        const recipient = team === 'SSP' ? row.ssp_adviser : null;
         const r = await db.query<{ referral_id: number }>(
-          `INSERT INTO referral (concern_id, referral_team_id, referred_by)
-           SELECT $1, referral_team_id, $3 FROM referral_team WHERE code = $2 RETURNING referral_id`,
-          [concernId, team, user.id],
+          `INSERT INTO referral (concern_id, referral_team_id, referred_by, recipient)
+           SELECT $1, referral_team_id, $3, $4 FROM referral_team WHERE code = $2 RETURNING referral_id`,
+          [concernId, team, user.id, recipient],
         );
         const id = r.rows[0].referral_id;
         if (note) await db.query('INSERT INTO referral_note (referral_id, note_text, created_by) VALUES ($1, $2, $3)', [id, note, user.id]);

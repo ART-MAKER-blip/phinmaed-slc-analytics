@@ -2,8 +2,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { canOpenRoute } from '@/lib/access';
 import { sampleOverview } from '@/lib/data';
 import { loadOverview, resolveSelection } from '@/lib/results/server';
-import { adminDashboard, dataManagerDashboard, facultyDashboard, teamDashboard } from '@/lib/results/dashboards';
-import { ROLE_TEAMS } from '@/lib/concerns/rules';
+import { adminDashboard } from '@/lib/results/dashboards';
 import { RoleDashboard, SAMPLE_ROLE_DASHBOARDS, ZONE_HEADINGS, ZoneOverviewDashboard } from '@/features/dashboard/DashboardPage';
 
 type SearchParams = { campus?: string; term?: string; period?: string };
@@ -33,13 +32,7 @@ export default async function Page({ searchParams }: { searchParams: Record<stri
   }
 
   const campusName = 'PHINMA COC';
-  if (live) {
-    if (user.role === 'data_manager') return <RoleDashboard content={await dataManagerDashboard(user)} campusName={campusName} />;
-    if (user.role === 'admin') return <RoleDashboard content={await adminDashboard()} campusName={campusName} />;
-    if (user.role === 'faculty') return <RoleDashboard content={await facultyDashboard(user)} campusName={campusName} />;
-    const team = ROLE_TEAMS[user.role];
-    if (team) return <RoleDashboard content={await teamDashboard(user, team)} campusName={campusName} />;
-  }
+  if (live && user.role === 'admin') return <RoleDashboard content={await adminDashboard()} campusName={campusName} />;
   const sample = SAMPLE_ROLE_DASHBOARDS[user.role];
   if (!sample) return null;
   return <RoleDashboard content={sample} campusName={campusName} />;

@@ -5,9 +5,10 @@ import { useState, type ReactNode } from 'react';
 
 type Data = {
   campuses: { code: string; name: string; status: string }[];
-  programs: { code: string; name: string }[];
+  colleges: { code: string; name: string }[];
+  programs: { code: string; name: string; college: string }[];
   offered: { campus: string; program: string }[];
-  terms: { code: string; name: string; academic_year: string; start_date: string | null; end_date: string | null; grade_release_date: string | null; in_use: boolean }[];
+  terms: { code: string; name: string; school_year: string; start_date: string | null; end_date: string | null; grade_release_date: string | null }[];
 };
 
 function useReference() {
@@ -90,7 +91,25 @@ export function ReferenceForms({ data }: { data: Data }) {
         </InlineForm>
       </Card>
 
-      <Card title="Programs and where they are offered" description="Imports accept a program only at the campuses that offer it. A program with enrolled students cannot be removed from a campus.">
+      <Card title="Colleges" description="Names must match the SIS COLLEGE column exactly (for example, College of Information Technology Education).">
+        <ul className="mb-3 divide-y divide-surface-line">
+          {data.colleges.map((c) => (
+            <li key={c.code} className="py-2">
+              <InlineForm action="rename_college" submit="Save" onSubmit={send}>
+                <input type="hidden" name="code" value={c.code} />
+                <span className="w-16 font-semibold">{c.code}</span>
+                <input name="name" defaultValue={c.name} aria-label={`${c.code} name`} className="field min-w-[320px]" required />
+              </InlineForm>
+            </li>
+          ))}
+        </ul>
+        <InlineForm action="add_college" submit="Add college" onSubmit={(b) => send(b, 'College added.')}>
+          <label className="text-xs">Code<input name="code" className="field mt-1 w-28" required placeholder="CAHS" /></label>
+          <label className="text-xs">Name as in the SIS<input name="name" className="field mt-1 min-w-[320px]" required /></label>
+        </InlineForm>
+      </Card>
+
+      <Card title="Programs and where they are offered" description="Program names must match the SIS COURSE column exactly. Imports accept a program only at the campuses that offer it, and a program with students cannot be removed from a campus.">
         <div className="mb-3 overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead><tr><th className="th">Program</th>{data.campuses.map((c) => <th key={c.code} className="th">{c.code}</th>)}</tr></thead>
@@ -100,7 +119,7 @@ export function ReferenceForms({ data }: { data: Data }) {
                   <td className="td">
                     <InlineForm action="rename_program" submit="Save" onSubmit={send}>
                       <input type="hidden" name="code" value={p.code} />
-                      <span className="w-16 font-semibold">{p.code}</span>
+                      <span className="w-16 font-semibold">{p.code}<span className="block text-xs font-normal text-ink-muted">{p.college}</span></span>
                       <input name="name" defaultValue={p.name} aria-label={`${p.code} name`} className="field min-w-[240px]" required />
                     </InlineForm>
                   </td>
@@ -117,18 +136,21 @@ export function ReferenceForms({ data }: { data: Data }) {
           </table>
         </div>
         <InlineForm action="add_program" submit="Add program" onSubmit={(b) => send(b, 'Program added. Tick the campuses that offer it.')}>
+          <label className="text-xs">College
+            <select name="college" className="field mt-1" required>{data.colleges.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</select>
+          </label>
           <label className="text-xs">Code<input name="code" className="field mt-1 w-28" required placeholder="BSHM" /></label>
           <label className="text-xs">Name<input name="name" className="field mt-1 min-w-[300px]" required /></label>
         </InlineForm>
       </Card>
 
-      <Card title="Terms" description="Term codes use the form 2026-1 so terms sort in order; the academic year is created from the code. Dates can be filled in once confirmed.">
+      <Card title="Terms" description="Term codes use the form 2025-2 (school year start, then semester 1, 2 or 3 for summer). The SIS SESSION “SY 25-26 SEM II” is term 2025-2.">
         <ul className="mb-3 divide-y divide-surface-line">
           {data.terms.map((t) => (
             <li key={t.code} className="py-2">
               <InlineForm action="update_term" submit="Save" onSubmit={send}>
                 <input type="hidden" name="code" value={t.code} />
-                <span className="w-20 font-semibold">{t.code}<span className="block text-xs font-normal text-ink-muted">{t.academic_year}</span></span>
+                <span className="w-20 font-semibold">{t.code}<span className="block text-xs font-normal text-ink-muted">SY {t.school_year}</span></span>
                 <label className="text-xs">Name<input name="name" defaultValue={t.name} className="field mt-1 min-w-[220px]" required /></label>
                 <label className="text-xs">Start<input type="date" name="startDate" defaultValue={t.start_date ?? ''} className="field mt-1" /></label>
                 <label className="text-xs">End<input type="date" name="endDate" defaultValue={t.end_date ?? ''} className="field mt-1" /></label>
